@@ -1,0 +1,70 @@
+### Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+### Build output
+dist/
+build/
+lib/
+*.tsbuildinfo
+
+### Env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+### pnpm
+.pnpm-store/
+pnp.js
+
+### TypeScript
+*.d.ts
+*.tsbuildinfo
+
+### Logs
+logs/
+*.log
+log.txt
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+### OS files
+.DS_Store
+Thumbs.db
+
+### IDEs and editors
+.vscode/
+/.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+### Tests
+.nyc_output/
+coverage/
+
+### Misc
+.cache/
+.next/
+out/
+/.turbo/
+/.parcel-cache/
+/.serverless/
+
+### Docker
+docker-compose.override.yml
+Dockerfile
+
+### Mac
+._*
+
+### Lockfiles (keep pnpm lock if you prefer) - comment out if you want to track it
+# package-lock.json
+# yarn.lock
