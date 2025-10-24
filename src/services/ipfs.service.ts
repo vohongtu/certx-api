@@ -1,16 +1,26 @@
-import axios from 'axios'
+import { config } from "../utils/env"
+import { PinataSDK } from "pinata"
 
-const endpoint = 'https://api.web3.storage/upload' // hoặc Pinata
+const pinata = new PinataSDK({
+  pinataJwt: config.IPFS_TOKEN,
+  pinataGateway: config.IPFS_GATEWAY,
+})
 
-export async function uploadJSON(token: string, obj: any) {
-  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' })
-  const res = await fetch(endpoint, { 
-    method: 'POST', 
-    headers: { Authorization: `Bearer ${token}` }, 
-    body: blob 
-  })
-  
-  if (!res.ok) throw new Error('IPFS upload fail')
-  const cid = (await res.json()).cid
-  return `ipfs://${cid}`
+function encodeBase64(obj: any): string {
+  const jsonString = JSON.stringify(obj)
+  return Buffer.from(jsonString).toString("base64")
+}
+
+export async function uploadJSON(obj: any) {
+  try {
+    const base64Data = encodeBase64(obj)
+    const upload = await pinata.upload.public.base64(base64Data)
+
+    console.log("Uploaded to IPFS:", upload)
+
+    return `https://${config.IPFS_GATEWAY}/ipfs/${upload.cid}`
+  } catch (error) {
+    console.error("Upload failed:", error)
+    throw error
+  }
 }

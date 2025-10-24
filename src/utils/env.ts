@@ -1,3 +1,6 @@
+import dotenv from "dotenv"
+dotenv.config()
+
 export const config = {
   PORT: Number(process.env.PORT || 8080),
   MONGO_URI: process.env.MONGO_URI!,
@@ -6,10 +9,11 @@ export const config = {
   CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS!,
   CONTRACT_CHAIN_ID: Number(process.env.CONTRACT_CHAIN_ID!),
   PRIVATE_KEY: process.env.PRIVATE_KEY!,
-  IPFS_TOKEN: process.env.IPFS_TOKEN || '',
-  PUBLIC_VERIFY_BASE: process.env.PUBLIC_VERIFY_BASE || 'http://localhost:5173/verify'
+  IPFS_TOKEN: process.env.IPFS_TOKEN || "",
+  IPFS_GATEWAY: process.env.IPFS_GATEWAY || "",
+  PUBLIC_VERIFY_BASE: process.env.PUBLIC_VERIFY_BASE || "http://localhost:5173/verify",
 }
 
-Object.entries(config).forEach(([k,v]) => { 
-  if (v===undefined || v===null || v==='') throw new Error(`Missing ENV: ${k}`) 
+Object.entries(config).forEach(([k, v]) => {
+  if (v === undefined || v === null || v === "") throw new Error(`Missing ENV: ${k}`)
 })
