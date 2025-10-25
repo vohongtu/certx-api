@@ -13,24 +13,42 @@ export async function issue(req: any, res: any) {
   const docHash = sha256Hex(file)
   const issuerName = req.user.name
 
-  const metadata = { holderName, degree, issuedDate, issuerName, docHash, file }
-  const metadataUri = await uploadJSON(metadata)
+  // Kiểm tra xem certificate đã tồn tại chưa
+  const existingCert = await Cert.findOne({ docHash })
+  if (existingCert) {
+    return res.status(400).json({ message: "Certificate với file này đã được cấp phát" })
+  }
 
-  await issueOnChain(docHash, metadataUri)
-  await Cert.create({
-    docHash,
-    metadataUri,
-    holderName,
-    degree,
-    issuedDate,
-    issuerName,
-    status: "VALID",
-  })
+  try {
+    const metadata = { holderName, degree, issuedDate, issuerName, docHash, file }
+    const metadataUri = await uploadJSON(metadata)
 
-  const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${docHash}`
-  const qrcodeDataUrl = await toDataURL(verifyUrl)
+    await issueOnChain(docHash, metadataUri)
+    await Cert.create({
+      docHash,
+      metadataUri,
+      holderName,
+      degree,
+      issuedDate,
+      issuerName,
+      status: "VALID",
+    })
 
-  res.json({ hash: docHash, verifyUrl, qrcodeDataUrl })
+    const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${docHash}`
+    const qrcodeDataUrl = await toDataURL(verifyUrl)
+
+    res.json({ hash: docHash, verifyUrl, qrcodeDataUrl })
+  } catch (error: any) {
+    console.error("Issue error:", error)
+    
+    // Xử lý lỗi từ smart contract
+    if (error.reason === "exists") {
+      return res.status(400).json({ message: "Certificate này đã tồn tại trên blockchain" })
+    }
+    
+    // Xử lý các lỗi khác
+    res.status(500).json({ message: "Có lỗi xảy ra khi cấp phát certificate" })
+  }
 }
 
 export async function revoke(req: any, res: any) {
