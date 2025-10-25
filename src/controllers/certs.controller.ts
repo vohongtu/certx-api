@@ -48,21 +48,17 @@ export async function verify(req: any, res: any) {
   if (!hash) return res.status(400).json({ message: "Thiếu hash" })
 
   try {
-    const on = await getOnChain(hash)
+    const onChain = await getOnChain(hash)
     const status =
-      Number(on.status) === 1 ? "VALID" : Number(on.status) === 2 ? "REVOKED" : "NOT_FOUND"
+      Number(onChain.status) === 1
+        ? "VALID"
+        : Number(onChain.status) === 2
+        ? "REVOKED"
+        : "NOT_FOUND"
 
-    let metadata: any = null
-    const off = await Cert.findOne({ docHash: hash })
-    if (off)
-      metadata = {
-        holderName: off.holderName,
-        degree: off.degree,
-        issuedDate: off.issuedDate,
-        issuerName: off.issuerName,
-      }
+    const metadataURI: string = onChain.metadataURI
 
-    res.json({ status, metadata })
+    res.json({ status, metadataURI })
   } catch {
     res.json({ status: "NOT_FOUND" })
   }

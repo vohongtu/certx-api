@@ -26,7 +26,7 @@ export async function login(req: any, res: any) {
 }
 
 export async function register(req: any, res: any) {
-  const { email, password, address } = req.body
+  const { email, password, name, address } = req.body
   if (!email || !password || !address)
     return res.status(400).json({ message: "Thiếu email hoặc password hoặc address" })
 
@@ -34,9 +34,9 @@ export async function register(req: any, res: any) {
   if (existing) return res.status(400).json({ message: "Email đã tồn tại" })
 
   const hash = await bcrypt.hash(password, 10)
-  const user = await Issuer.create({ email, passwordHash: hash, address })
+  const user = await Issuer.create({ email, name, passwordHash: hash, address })
 
   await whiteListIssuer(address, true)
 
-  res.json({ id: user.id, email: user.email, address: user.address })
+  res.json({ id: user.id, email: user.email, name: user.name, address: user.address })
 }
