@@ -112,6 +112,7 @@ WATERMARK_OPACITY=0.2
 WATERMARK_COLOR=#bfbfbf
 WATERMARK_REPEAT=3
 WATERMARK_MARGIN=0.12
+WATERMARK_FONT_PATH=./fonts/NotoSans-Regular.ttf
 ```
 
 ### 3. Chạy development server
@@ -141,7 +142,8 @@ npm start
 
 ### Certificates
 - `POST /certs/issue` - Cấp phát chứng chỉ (cần auth)
-- `POST /certs/revoke` - Thu hồi chứng chỉ (cần auth)
+- `GET /certs` - Danh sách chứng chỉ do issuer hiện tại phát hành
+- `POST /certs/revoke` - Thu hồi chứng chỉ (cần auth, kiểm tra issuer)
 - `GET /verify?hash=...` - Xác thực chứng chỉ
 - `GET /qrcode?hash=...` - Tạo QR code PNG
 
@@ -234,6 +236,7 @@ WATERMARK_MARGIN=0.12               # Biên trên/dưới (0-0.45)
 ```
 - `WATERMARK_REPEAT`: số lần lặp watermark trên mỗi trang (ví dụ 3 cho cân bằng, tăng/giảm để chỉnh khoảng cách).
 - `WATERMARK_MARGIN`: tỉ lệ khoảng cách đỉnh/cuối trang (0-0.45). Mặc định 0.12 giúp watermark bắt đầu gần mép trên.
+- `WATERMARK_FONT_PATH`: (tùy chọn) đường dẫn tới file .ttf hỗ trợ Unicode để giữ nguyên dấu tiếng Việt trong watermark.
 
 
 ### Cách hoạt động
@@ -285,3 +288,20 @@ Watermark text sẽ tự động bao gồm: `WATERMARK_TEXT • holderName • i
 ## 📄 License
 
 MIT License
+
+## 🌱 Seed dữ liệu
+
+Tạo nhanh một issuer mẫu:
+
+```bash
+pnpm run seed
+```
+
+Có thể ghi đè thông tin qua env:
+
+```env
+SEED_ISSUER_EMAIL=issuer@certx.local
+SEED_ISSUER_PASSWORD=Certx123!
+SEED_ISSUER_NAME=CertX Academy
+SEED_ISSUER_ADDRESS=0xSeedIssuerAddress...
+```

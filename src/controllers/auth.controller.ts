@@ -15,7 +15,7 @@ export async function login(req: any, res: any) {
   if (!ok) return res.status(401).json({ message: "Sai thông tin" })
 
   const token = jwt.sign(
-    { sub: user.id, email: user.email, role: "issuer", address: user.address },
+    { sub: user.id, email: user.email, role: "issuer", address: user.address, name: user.name },
     config.JWT_SECRET,
     {
       expiresIn: "1d",
