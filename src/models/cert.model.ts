@@ -6,7 +6,9 @@ const CertSchema = new Schema({
   metadataUri: String,
   holderName: String,
   degree: String,
-  issuedDate: String,
+  issuedDate: String, // Ngày cấp (người dùng chọn)
+  expirationDate: String, // Ngày hết hạn của chứng chỉ (tùy chọn)
+  certxIssuedDate: String, // Ngày up chứng chỉ trên CertX (tự động = ngày hiện tại khi issue, dùng cho watermark)
   issuerName: String,
   issuerId: { type: String, index: true },
   issuerEmail: String,

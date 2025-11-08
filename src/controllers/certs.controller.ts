@@ -6,13 +6,45 @@ import { config } from "../utils/env"
 import { uploadJSON } from "../services/ipfs.service"
 import { addWatermark, detectMime } from "../services/watermark.service"
 
+// Helper function để tính toán status dựa trên expirationDate
+function calculateStatus(dbStatus: 'VALID' | 'REVOKED', expirationDate?: string): 'VALID' | 'REVOKED' | 'EXPIRED' {
+  if (dbStatus === 'REVOKED' || !expirationDate) return dbStatus
+  
+  try {
+    const expiration = new Date(expirationDate)
+    expiration.setHours(23, 59, 59, 999)
+    return new Date() > expiration ? 'EXPIRED' : dbStatus
+  } catch (error) {
+    console.error('Error parsing expirationDate:', error)
+    return dbStatus
+  }
+}
+
+// Helper function để map cert thành response object
+function mapCertToResponse(c: any) {
+  return {
+    id: c.id,
+    docHash: c.docHash,
+    holderName: c.holderName,
+    degree: c.degree,
+    issuedDate: c.issuedDate,
+    expirationDate: c.expirationDate || undefined,
+    certxIssuedDate: c.certxIssuedDate || undefined,
+    status: calculateStatus(c.status, c.expirationDate),
+    metadataUri: c.metadataUri || undefined,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    revokedAt: c.revokedAt,
+  }
+}
+
 export async function issue(req: any, res: any) {
   const file: Buffer = req.file?.buffer
   if (!file) {
     return res.status(400).json({ message: "Thiếu file" })
   }
 
-  const { holderName, degree, issuedDate } = req.body
+  const { holderName, degree, issuedDate, expirationDate } = req.body
   const issuerId = req.user?.sub
   const issuerEmail = req.user?.email
   const issuerName = req.user?.name || issuerEmail || 'Issuer'
@@ -47,17 +79,22 @@ export async function issue(req: any, res: any) {
     // Xác định đây có phải re-issue không (dựa trên originalHash)
     const isReIssue = !!revokedCert
 
+    // Tạo ngày xác thực (ngày up chứng chỉ trên CertX) - tự động = ngày hiện tại
+    const certxIssuedDate = new Date().toISOString().split('T')[0]
+
     // 2) CHỈ KHI PASS KIỂM TRA mới thêm watermark (tiết kiệm tài nguyên)
     let targetFile = file
     let mimeType: string
     let watermarkApplied = false
-    let effectiveWatermarkText = `${config.WATERMARK_TEXT} • ${holderName} • ${issuedDate}`
+    // Watermark sử dụng certxIssuedDate (ngày xác thực) thay vì issuedDate
+    let effectiveWatermarkText = `${config.WATERMARK_TEXT} • ${holderName} • ${certxIssuedDate}`
     let usedCustomFont = false
     const watermarkMarginCfg = (config as any).WATERMARK_MARGIN ?? 0.12
     const watermarkFontPathCfg = (config as any).WATERMARK_FONT_PATH ?? null
     
     if (config.WATERMARK_ENABLED) {
-      let watermarkText = `${config.WATERMARK_TEXT} • ${holderName} • ${issuedDate}`
+      // Watermark sử dụng certxIssuedDate (ngày xác thực)
+      let watermarkText = `${config.WATERMARK_TEXT} • ${holderName} • ${certxIssuedDate}`
       const result = await addWatermark(file, watermarkText, config.WATERMARK_OPACITY)
       targetFile = result.buffer
       mimeType = result.mime
@@ -94,13 +131,15 @@ export async function issue(req: any, res: any) {
       holderName,
       degree,
       issuedDate,
+      expirationDate: expirationDate || undefined, // Ngày hết hạn (tùy chọn)
+      certxIssuedDate, // Ngày up chứng chỉ trên CertX (ngày xác thực)
       issuerName,
       docHash,
       mimeType,
       hashBeforeWatermark: originalHash,
       watermarkApplied,
       watermarkText: effectiveWatermarkText,
-      watermarkOriginalText: `${config.WATERMARK_TEXT} • ${holderName} • ${issuedDate}`,
+      watermarkOriginalText: `${config.WATERMARK_TEXT} • ${holderName} • ${certxIssuedDate}`,
       watermarkOpacity: config.WATERMARK_OPACITY,
       watermarkColor: config.WATERMARK_COLOR,
       watermarkRepeat: config.WATERMARK_REPEAT,
@@ -128,6 +167,8 @@ export async function issue(req: any, res: any) {
       holderName,
       degree,
       issuedDate,
+      expirationDate: expirationDate || undefined, // Ngày hết hạn (tùy chọn)
+      certxIssuedDate, // Ngày up chứng chỉ trên CertX (ngày xác thực)
       issuerName,
       issuerId,
       issuerEmail,
@@ -242,9 +283,12 @@ export async function listMyCerts(req: any, res: any) {
   const status = (req.query.status ?? '').toString().toUpperCase()
 
   const filter: any = { issuerId, metadataUri: { $exists: true, $ne: '' } }
+  // Lưu ý: EXPIRED được tính toán động, không lưu trong DB
+  // Nếu filter theo EXPIRED, cần filter sau khi tính toán status
   if (status === 'VALID' || status === 'REVOKED') {
     filter.status = status
   }
+  // EXPIRED sẽ được filter ở frontend hoặc sau khi tính toán
   if (q) {
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'i')
     filter.$or = [
@@ -252,6 +296,43 @@ export async function listMyCerts(req: any, res: any) {
       { degree: regex },
       { docHash: regex },
     ]
+  }
+
+  // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
+  if (status === 'EXPIRED') {
+    const baseFilter: any = { issuerId, metadataUri: { $exists: true, $ne: '' } }
+    if (q) {
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'i')
+      baseFilter.$or = [{ holderName: regex }, { degree: regex }, { docHash: regex }]
+    }
+    
+    const allCerts = await Cert.find(baseFilter)
+    const expiredCerts = allCerts
+      .map((c) => ({ cert: c, status: calculateStatus(c.status, c.expirationDate) }))
+      .filter((item) => item.status === 'EXPIRED')
+      .sort((a, b) => b.cert.createdAt.getTime() - a.cert.createdAt.getTime())
+    
+    const totalExpired = expiredCerts.length
+    const totalPagesExpired = Math.max(Math.ceil(totalExpired / limit), 1)
+    const currentPageExpired = Math.min(page, totalPagesExpired)
+    const paginatedExpired = expiredCerts.slice(
+      (currentPageExpired - 1) * limit,
+      currentPageExpired * limit
+    )
+    
+    res.json({
+      items: paginatedExpired.map((item) => ({
+        ...mapCertToResponse(item.cert),
+        status: item.status,
+      })),
+      pagination: {
+        page: currentPageExpired,
+        limit,
+        total: totalExpired,
+        totalPages: totalPagesExpired,
+      },
+    })
+    return
   }
 
   const total = await Cert.countDocuments(filter)
@@ -264,18 +345,7 @@ export async function listMyCerts(req: any, res: any) {
     .limit(limit)
 
   res.json({
-    items: certs.map((c) => ({
-      id: c.id,
-      docHash: c.docHash,
-      holderName: c.holderName,
-      degree: c.degree,
-      issuedDate: c.issuedDate,
-      status: c.status,
-      metadataUri: c.metadataUri || undefined,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      revokedAt: c.revokedAt,
-    })),
+    items: certs.map(mapCertToResponse),
     pagination: {
       page: currentPage,
       limit,
