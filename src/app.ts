@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import authRoutes from './routes/auth.routes'
 import certRoutes from './routes/certs.routes'
+import credentialTypesRoutes from './routes/credential-types.routes'
+import credentialValidityOptionsRoutes from './routes/credential-validity-options.routes'
 
 export const app = express()
 
@@ -30,6 +32,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.get('/health', (_, res) => res.json({ ok: true }))
 app.use('/auth', authRoutes)
 app.use('/', certRoutes) // /certs/*, /verify, /qrcode
+app.use('/', credentialTypesRoutes) // /credential-types/*
+app.use('/', credentialValidityOptionsRoutes) // /credential-validity-options/*
 
 // error fallback
 app.use((err: any, _req: any, res: any, _next: any) => {

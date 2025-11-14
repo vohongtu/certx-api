@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { config } from '../utils/env'
+import { UserRole } from '../models/issuer.model'
 
 export function requireAuth(req: any, res: any, next: any) {
   const h = req.headers.authorization || ''
@@ -13,4 +14,24 @@ export function requireAuth(req: any, res: any, next: any) {
   } catch { 
     return res.status(401).json({ message: 'Invalid token' }) 
   }
+}
+
+export function requireAdmin(req: any, res: any, next: any) {
+  requireAuth(req, res, () => {
+    const role = req.user?.role
+    if (role !== UserRole.ADMIN && role !== UserRole.SUPER_ADMIN) {
+      return res.status(403).json({ message: 'Chỉ admin mới có quyền thực hiện thao tác này' })
+    }
+    next()
+  })
+}
+
+export function requireSuperAdmin(req: any, res: any, next: any) {
+  requireAuth(req, res, () => {
+    const role = req.user?.role
+    if (role !== UserRole.SUPER_ADMIN) {
+      return res.status(403).json({ message: 'Chỉ super admin mới có quyền thực hiện thao tác này' })
+    }
+    next()
+  })
 }

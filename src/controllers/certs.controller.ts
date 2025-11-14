@@ -1,14 +1,19 @@
 import { sha256Hex } from "../services/hash.service"
 import { issueOnChain, revokeOnChain, getOnChain } from "../services/blockchain.service"
 import { toDataURL } from "../services/qrcode.service"
-import Cert from "../models/cert.model"
+import Cert, { CertStatus } from "../models/cert.model"
 import { config } from "../utils/env"
 import { uploadJSON } from "../services/ipfs.service"
 import { addWatermark, detectMime } from "../services/watermark.service"
 
 // Helper function để tính toán status dựa trên expirationDate
-function calculateStatus(dbStatus: 'VALID' | 'REVOKED', expirationDate?: string): 'VALID' | 'REVOKED' | 'EXPIRED' {
-  if (dbStatus === 'REVOKED' || !expirationDate) return dbStatus
+function calculateStatus(dbStatus: string, expirationDate?: string): string {
+  // Nếu là PENDING, APPROVED, REJECTED thì không tính EXPIRED
+  if (dbStatus === CertStatus.PENDING || dbStatus === CertStatus.APPROVED || dbStatus === CertStatus.REJECTED) {
+    return dbStatus
+  }
+  
+  if (dbStatus === CertStatus.REVOKED || !expirationDate) return dbStatus
   
   try {
     const expiration = new Date(expirationDate)
@@ -30,11 +35,21 @@ function mapCertToResponse(c: any) {
     issuedDate: c.issuedDate,
     expirationDate: c.expirationDate || undefined,
     certxIssuedDate: c.certxIssuedDate || undefined,
+    credentialTypeId: c.credentialTypeId || undefined,
+    validityOptionId: c.validityOptionId || undefined,
     status: calculateStatus(c.status, c.expirationDate),
     metadataUri: c.metadataUri || undefined,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     revokedAt: c.revokedAt,
+    rejectionReason: c.rejectionReason || undefined,
+    allowReupload: c.allowReupload || false,
+    approvedBy: c.approvedBy || undefined,
+    rejectedBy: c.rejectedBy || undefined,
+    approvedAt: c.approvedAt || undefined,
+    rejectedAt: c.rejectedAt || undefined,
+    reuploadedFrom: c.pendingMetadata?.reuploadedFrom || undefined, // ID của cert gốc nếu là reup
+    reuploadNote: c.pendingMetadata?.reuploadNote || undefined, // Ghi chú khi reup
   }
 }
 
@@ -282,11 +297,15 @@ export async function listMyCerts(req: any, res: any) {
   const q = (req.query.q ?? '').toString().trim()
   const status = (req.query.status ?? '').toString().toUpperCase()
 
-  const filter: any = { issuerId, metadataUri: { $exists: true, $ne: '' } }
+  // LƯU Ý: Không filter theo metadataUri vì cert PENDING chưa có metadataUri
+  // User cần thấy cả cert PENDING (chưa approve) và cert đã approve
+  const filter: any = { issuerId }
   // Lưu ý: EXPIRED được tính toán động, không lưu trong DB
   // Nếu filter theo EXPIRED, cần filter sau khi tính toán status
-  if (status === 'VALID' || status === 'REVOKED') {
+  if (status && status !== 'ALL' && status !== 'EXPIRED') {
+    if ([CertStatus.PENDING, CertStatus.APPROVED, CertStatus.REJECTED, CertStatus.VALID, CertStatus.REVOKED].includes(status as CertStatus)) {
     filter.status = status
+    }
   }
   // EXPIRED sẽ được filter ở frontend hoặc sau khi tính toán
   if (q) {
@@ -300,7 +319,8 @@ export async function listMyCerts(req: any, res: any) {
 
   // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
   if (status === 'EXPIRED') {
-    const baseFilter: any = { issuerId, metadataUri: { $exists: true, $ne: '' } }
+    // EXPIRED chỉ áp dụng cho cert đã approve (có expirationDate)
+    const baseFilter: any = { issuerId, expirationDate: { $exists: true, $ne: null, $nin: [null, ''] } }
     if (q) {
       const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'i')
       baseFilter.$or = [{ holderName: regex }, { degree: regex }, { docHash: regex }]
@@ -308,7 +328,7 @@ export async function listMyCerts(req: any, res: any) {
     
     const allCerts = await Cert.find(baseFilter)
     const expiredCerts = allCerts
-      .map((c) => ({ cert: c, status: calculateStatus(c.status, c.expirationDate) }))
+      .map((c) => ({ cert: c, status: calculateStatus(c.status, c.expirationDate || undefined) }))
       .filter((item) => item.status === 'EXPIRED')
       .sort((a, b) => b.cert.createdAt.getTime() - a.cert.createdAt.getTime())
     
@@ -414,4 +434,688 @@ export async function qrcode(req: any, res: any) {
 
   res.setHeader("Content-Type", "image/png")
   res.send(img)
+}
+
+// User chỉ upload file, không cấp phát
+export async function uploadFile(req: any, res: any) {
+  const file: Buffer = req.file?.buffer
+  if (!file) {
+    return res.status(400).json({ message: "Thiếu file" })
+  }
+
+  const { holderName, degree, credentialTypeId } = req.body
+  const issuerId = req.user?.sub
+  const issuerEmail = req.user?.email
+  const issuerName = req.user?.name || issuerEmail || 'User'
+
+  if (!holderName || !degree) {
+    return res.status(400).json({ message: "Thiếu thông tin: holderName, degree" })
+  }
+
+  if (!issuerId) return res.status(401).json({ message: 'Thiếu thông tin user' })
+
+  try {
+    // Tính hash của file gốc
+    const originalHash = sha256Hex(file)
+
+    // Kiểm tra duplicate - nếu đã có file này được upload (PENDING hoặc APPROVED) thì không cho upload lại
+    const existingCert = await Cert.findOne({ 
+      originalHash: originalHash,
+      issuerId: issuerId,
+      status: { $in: [CertStatus.PENDING, CertStatus.APPROVED, CertStatus.VALID] }
+    })
+    
+    if (existingCert) {
+      return res.status(400).json({ message: "File này đã được upload. Vui lòng kiểm tra lịch sử upload." })
+    }
+
+    // Tạo ngày upload (và ngày cấp = ngày upload)
+    const certxIssuedDate = new Date().toISOString().split('T')[0]
+    const issuedDate = certxIssuedDate // Ngày cấp = ngày upload
+
+    // LƯU Ý: User upload KHÔNG thêm watermark, chỉ lưu file gốc
+    // Chỉ khi admin approve thì mới thêm watermark
+    const mimeType = await detectMime(file)
+
+    // Lưu file gốc (chưa watermark) - docHash sẽ được tính lại khi approve
+    // Tạm thời dùng originalHash làm docHash (sẽ được cập nhật khi approve)
+    const tempDocHash = originalHash
+
+    // LƯU Ý: User upload chỉ lưu metadata và file gốc vào MongoDB, KHÔNG upload lên IPFS
+    // Chỉ khi admin approve thì mới thêm watermark, upload lên IPFS và ghi lên blockchain
+    // Lưu metadata và file gốc tạm thời vào MongoDB (chưa upload IPFS, chưa watermark)
+    const cert = await Cert.create({
+      docHash: tempDocHash, // Tạm thời dùng originalHash, sẽ được cập nhật khi approve
+      originalHash,
+      metadataUri: undefined, // Chưa có metadataUri vì chưa upload IPFS
+      holderName,
+      degree,
+      credentialTypeId: credentialTypeId || undefined,
+      issuedDate,
+      certxIssuedDate,
+      issuerName,
+      issuerId,
+      issuerEmail,
+      status: CertStatus.PENDING,
+      pendingMetadata: {
+        file: file, // Lưu file gốc (chưa watermark) vào MongoDB
+        mimeType,
+        hashBeforeWatermark: originalHash,
+        watermarkApplied: false, // Chưa có watermark
+        watermarkText: undefined,
+        watermarkOriginalText: undefined,
+        watermarkOpacity: config.WATERMARK_OPACITY,
+        watermarkColor: config.WATERMARK_COLOR,
+        watermarkRepeat: config.WATERMARK_REPEAT,
+        watermarkMargin: (config as any).WATERMARK_MARGIN ?? 0.12,
+        watermarkFontPath: (config as any).WATERMARK_FONT_PATH || undefined,
+        watermarkUsedCustomFont: false,
+      },
+    })
+
+    res.json({ 
+      id: cert.id,
+      docHash: cert.docHash,
+      status: CertStatus.PENDING,
+      message: "File đã được upload thành công. Vui lòng chờ admin duyệt."
+    })
+  } catch (error: any) {
+    console.error("Upload error:", error)
+    
+    if (error.message?.includes('IPFS') || error.message?.includes('Pinata')) {
+      return res.status(503).json({ message: "Lỗi khi upload lên IPFS. Vui lòng thử lại sau." })
+    }
+    
+    const errorMessage = error.message || "Có lỗi xảy ra khi upload file"
+    res.status(500).json({ message: errorMessage })
+  }
+}
+
+// Admin approve và cấp phát cert
+export async function approveCert(req: any, res: any) {
+  const { id } = req.params
+  const { issuedDate, expirationDate, validityOptionId, expirationMonths, expirationYears } = req.body
+  const adminId = req.user?.sub
+
+  if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+
+    if (cert.status !== CertStatus.PENDING) {
+      return res.status(400).json({ message: 'Chứng chỉ này không ở trạng thái chờ duyệt' })
+    }
+
+    // Ngày cert được tạo ở cơ quan (issuedDate từ admin)
+    const certIssuedDate = issuedDate || cert.issuedDate || new Date().toISOString().split('T')[0]
+
+    // Tính toán expirationDate
+    let finalExpirationDate: string | undefined = expirationDate
+
+    // Nếu có validityOptionId, tính từ validity option
+    if (!finalExpirationDate && validityOptionId) {
+      const CredentialValidityOption = (await import('../models/credential-validity-option.model')).default
+      const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
+      
+      if (validityOption) {
+        const baseDate = new Date(certIssuedDate)
+        if (validityOption.periodMonths) {
+          baseDate.setMonth(baseDate.getMonth() + validityOption.periodMonths)
+          finalExpirationDate = baseDate.toISOString().split('T')[0]
+        } else if (validityOption.periodDays) {
+          baseDate.setDate(baseDate.getDate() + validityOption.periodDays)
+          finalExpirationDate = baseDate.toISOString().split('T')[0]
+        }
+      }
+    }
+
+    // Nếu không có validityOptionId, tính từ expirationMonths/expirationYears
+    if (!finalExpirationDate && (expirationMonths || expirationYears)) {
+      const baseDate = new Date(certIssuedDate)
+      if (expirationMonths) {
+        baseDate.setMonth(baseDate.getMonth() + parseInt(expirationMonths))
+      }
+      if (expirationYears) {
+        baseDate.setFullYear(baseDate.getFullYear() + parseInt(expirationYears))
+      }
+      finalExpirationDate = baseDate.toISOString().split('T')[0]
+    }
+
+    // LƯU Ý: Khi admin approve, mới thêm watermark và upload lên IPFS
+    // Metadata được tạo từ thông tin trong MongoDB (không fetch từ IPFS vì chưa có)
+    if (!cert.pendingMetadata || !cert.pendingMetadata.file) {
+      return res.status(400).json({ message: 'Chứng chỉ không có file để approve' })
+    }
+
+    // Lấy file gốc từ pendingMetadata (chưa watermark)
+    const originalFile = cert.pendingMetadata.file
+
+    // Thêm watermark khi admin approve
+    let watermarkedFile = originalFile
+    let watermarkApplied = false
+    let effectiveWatermarkText = ''
+    let usedCustomFont = false
+    const watermarkMarginCfg = cert.pendingMetadata.watermarkMargin ?? 0.12
+    const watermarkFontPathCfg = cert.pendingMetadata.watermarkFontPath
+
+    if (config.WATERMARK_ENABLED) {
+      const watermarkText = `${config.WATERMARK_TEXT} • ${cert.holderName} • ${cert.certxIssuedDate}`
+      const result = await addWatermark(originalFile, watermarkText, config.WATERMARK_OPACITY)
+      watermarkedFile = result.buffer
+      watermarkApplied = true
+      effectiveWatermarkText = result.textUsed
+      usedCustomFont = result.usedCustomFont
+    }
+
+    // Tính hash từ bản đã watermark (docHash mới)
+    const docHash = sha256Hex(watermarkedFile)
+
+    // Tạo metadata từ thông tin trong DB và pendingMetadata, với file đã watermark
+    const metadata = {
+      holderName: cert.holderName,
+      degree: cert.degree,
+      issuedDate: certIssuedDate, // Ngày cert được tạo ở cơ quan (từ admin chọn)
+      certxIssuedDate: cert.certxIssuedDate,
+      issuerName: cert.issuerName,
+      docHash: docHash, // Hash của file đã watermark
+      issuerId: cert.issuerId,
+      issuerEmail: cert.issuerEmail,
+      expirationDate: finalExpirationDate,
+      mimeType: cert.pendingMetadata.mimeType,
+      hashBeforeWatermark: cert.pendingMetadata.hashBeforeWatermark,
+      watermarkApplied: watermarkApplied,
+      watermarkText: effectiveWatermarkText,
+      watermarkOriginalText: `${config.WATERMARK_TEXT} • ${cert.holderName} • ${cert.certxIssuedDate}`,
+      watermarkOpacity: config.WATERMARK_OPACITY,
+      watermarkColor: config.WATERMARK_COLOR,
+      watermarkRepeat: config.WATERMARK_REPEAT,
+      watermarkMargin: watermarkMarginCfg,
+      watermarkFontPath: watermarkFontPathCfg || undefined,
+      watermarkUsedCustomFont: usedCustomFont,
+      file: watermarkedFile, // File đã watermark
+      status: CertStatus.VALID,
+      // Thêm thông tin reup nếu có
+      ...(cert.pendingMetadata.reuploadNote && { reuploadNote: cert.pendingMetadata.reuploadNote }),
+      ...(cert.pendingMetadata.reuploadedFrom && { reuploadedFrom: cert.pendingMetadata.reuploadedFrom }),
+    }
+
+    // Upload metadata lên IPFS (lần đầu tiên, vì user upload chỉ lưu vào MongoDB)
+    const newMetadataUri = await uploadJSON(metadata)
+
+    // Ghi on-chain với metadata mới
+    // LƯU Ý: Chỉ khi admin approve thì mới ghi lên blockchain
+    // User upload chỉ lưu vào MongoDB, không ghi blockchain
+    await issueOnChain(docHash, newMetadataUri)
+
+    // Cập nhật DB
+    cert.status = CertStatus.VALID
+    cert.metadataUri = newMetadataUri
+    cert.docHash = docHash // Cập nhật docHash từ file đã watermark
+    cert.issuedDate = certIssuedDate // Cập nhật ngày cert được tạo ở cơ quan
+    cert.expirationDate = finalExpirationDate || undefined
+    cert.validityOptionId = validityOptionId || undefined
+    cert.pendingMetadata = undefined // Xóa pendingMetadata vì đã upload lên IPFS
+    cert.approvedBy = adminId
+    cert.approvedAt = new Date()
+    await cert.save()
+
+    // Tạo verify link
+    const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${cert.docHash}`
+    const qrcodeDataUrl = await toDataURL(verifyUrl)
+
+    res.json({ 
+      ok: true, 
+      hash: cert.docHash, 
+      verifyUrl, 
+      qrcodeDataUrl,
+      expirationDate: finalExpirationDate
+    })
+  } catch (error: any) {
+    console.error("Approve error:", error)
+    
+    if (error.reason === "exists") {
+      return res.status(400).json({ message: "Certificate này đã tồn tại trên blockchain" })
+    }
+
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+      return res.status(503).json({ message: "Không thể kết nối đến blockchain hoặc IPFS. Vui lòng thử lại sau." })
+    }
+
+    const errorMessage = error.message || "Có lỗi xảy ra khi duyệt chứng chỉ"
+    res.status(500).json({ message: errorMessage })
+  }
+}
+
+// Admin reject cert với lý do và cho phép reup
+export async function rejectCert(req: any, res: any) {
+  const { id } = req.params
+  const { rejectionReason, allowReupload } = req.body
+  const adminId = req.user?.sub
+
+  if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
+
+  if (!rejectionReason || rejectionReason.trim() === '') {
+    return res.status(400).json({ message: 'Vui lòng nhập lý do từ chối' })
+  }
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+
+    if (cert.status !== CertStatus.PENDING) {
+      return res.status(400).json({ message: 'Chứng chỉ này không ở trạng thái chờ duyệt' })
+    }
+
+    cert.status = CertStatus.REJECTED
+    cert.rejectionReason = rejectionReason.trim()
+    cert.allowReupload = allowReupload === true || allowReupload === 'true'
+    cert.rejectedBy = adminId
+    cert.rejectedAt = new Date()
+    await cert.save()
+
+    res.json({ ok: true, message: 'Đã từ chối chứng chỉ', allowReupload: cert.allowReupload })
+  } catch (error: any) {
+    console.error("Reject error:", error)
+    const errorMessage = error.message || "Có lỗi xảy ra khi từ chối chứng chỉ"
+    res.status(500).json({ message: errorMessage })
+  }
+}
+
+// Admin xem danh sách certs chờ duyệt
+export async function listPendingCerts(req: any, res: any) {
+  const page = Math.max(parseInt(req.query.page ?? '1', 10) || 1, 1)
+  const limit = Math.min(Math.max(parseInt(req.query.limit ?? '10', 10) || 10, 1), 50)
+  const q = (req.query.q ?? '').toString().trim()
+  const status = (req.query.status ?? '').toString().toUpperCase()
+
+  // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
+  if (status === 'EXPIRED') {
+    // EXPIRED chỉ áp dụng cho cert đã approve (có expirationDate)
+    const baseFilter: any = { expirationDate: { $exists: true, $ne: null, $nin: [null, ''] } }
+    if (q) {
+      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+      baseFilter.$or = [
+        { holderName: regex },
+        { degree: regex },
+        { docHash: regex },
+        { issuerEmail: regex },
+      ]
+    }
+    
+    const allCerts = await Cert.find(baseFilter)
+    const expiredCerts = allCerts
+      .map((c) => ({ cert: c, status: calculateStatus(c.status, c.expirationDate || undefined) }))
+      .filter((item) => item.status === 'EXPIRED')
+      .sort((a, b) => b.cert.createdAt.getTime() - a.cert.createdAt.getTime())
+    
+    const totalExpired = expiredCerts.length
+    const totalPagesExpired = Math.max(Math.ceil(totalExpired / limit), 1)
+    const currentPageExpired = Math.min(page, totalPagesExpired)
+    const paginatedExpired = expiredCerts.slice(
+      (currentPageExpired - 1) * limit,
+      currentPageExpired * limit
+    )
+    
+    res.json({
+      items: paginatedExpired.map((item) => ({
+        ...mapCertToResponse(item.cert),
+        status: item.status,
+      })),
+      pagination: {
+        page: currentPageExpired,
+        limit,
+        total: totalExpired,
+        totalPages: totalPagesExpired,
+      },
+    })
+    return
+  }
+
+  const filter: any = {}
+  
+  // Admin có thể xem PENDING, APPROVED, REJECTED, VALID, REVOKED
+  // Lưu ý: APPROVED là status tạm thời, sau khi approve thì status = VALID
+  // Nếu filter theo APPROVED, tìm các cert đã được approve (có approvedAt)
+  if (status && status !== 'ALL') {
+    if (status === 'APPROVED') {
+      // Filter theo approvedAt thay vì status (vì sau khi approve, status = VALID)
+      filter.approvedAt = { $exists: true, $ne: null }
+    } else if ([CertStatus.PENDING, CertStatus.REJECTED, CertStatus.VALID, CertStatus.REVOKED].includes(status as CertStatus)) {
+      filter.status = status
+    }
+  }
+  // Nếu không có status hoặc status là 'ALL', không set filter.status (xem tất cả)
+
+  if (q) {
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+    filter.$or = [
+      { holderName: regex },
+      { degree: regex },
+      { docHash: regex },
+      { issuerEmail: regex },
+    ]
+  }
+
+  const total = await Cert.countDocuments(filter)
+  const totalPages = Math.max(Math.ceil(total / limit), 1)
+  const currentPage = Math.min(page, totalPages)
+
+  const certs = await Cert.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((currentPage - 1) * limit)
+    .limit(limit)
+
+  res.json({
+    items: certs.map(mapCertToResponse),
+    pagination: {
+      page: currentPage,
+      limit,
+      total,
+      totalPages,
+    },
+  })
+}
+
+// Admin/SuperAdmin chỉnh sửa thời gian tồn tại của cert
+export async function updateExpirationDate(req: any, res: any) {
+  const { id } = req.params
+  const { issuedDate, expirationDate, validityOptionId, expirationMonths, expirationYears } = req.body
+  const adminId = req.user?.sub
+
+  if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+
+    if (cert.status !== CertStatus.VALID) {
+      return res.status(400).json({ message: 'Chỉ có thể chỉnh sửa thời gian tồn tại của chứng chỉ đã được cấp phát' })
+    }
+
+    // Cập nhật issuedDate nếu có
+    const finalIssuedDate = issuedDate || cert.issuedDate
+
+    let finalExpirationDate: string | undefined = expirationDate
+
+    // Nếu có validityOptionId, tính từ validity option
+    if (!finalExpirationDate && validityOptionId) {
+      const CredentialValidityOption = (await import('../models/credential-validity-option.model')).default
+      const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
+      
+      if (validityOption && finalIssuedDate) {
+        const baseDate = new Date(finalIssuedDate)
+        if (validityOption.periodMonths) {
+          baseDate.setMonth(baseDate.getMonth() + validityOption.periodMonths)
+          finalExpirationDate = baseDate.toISOString().split('T')[0]
+        } else if (validityOption.periodDays) {
+          baseDate.setDate(baseDate.getDate() + validityOption.periodDays)
+          finalExpirationDate = baseDate.toISOString().split('T')[0]
+        }
+      }
+    }
+
+    // Nếu không có validityOptionId, tính từ expirationMonths/expirationYears
+    if (!finalExpirationDate && (expirationMonths || expirationYears)) {
+      if (!finalIssuedDate) {
+        return res.status(400).json({ message: 'Chứng chỉ không có ngày cấp' })
+      }
+      const baseDate = new Date(finalIssuedDate)
+      if (expirationMonths) {
+        baseDate.setMonth(baseDate.getMonth() + parseInt(expirationMonths))
+      }
+      if (expirationYears) {
+        baseDate.setFullYear(baseDate.getFullYear() + parseInt(expirationYears))
+      }
+      finalExpirationDate = baseDate.toISOString().split('T')[0]
+    }
+
+    if (!finalExpirationDate) {
+      return res.status(400).json({ message: 'Thiếu thông tin ngày hết hạn' })
+    }
+
+    let metadata: any = {}
+    try {
+      const metadataUrl = cert.metadataUri
+      if (metadataUrl) {
+        const response = await fetch(metadataUrl)
+        if (response.ok) {
+          metadata = await response.json()
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching metadata from IPFS:', error)
+      metadata = {
+        holderName: cert.holderName,
+        degree: cert.degree,
+        issuedDate: cert.issuedDate,
+        certxIssuedDate: cert.certxIssuedDate,
+        issuerName: cert.issuerName,
+        docHash: cert.docHash,
+        issuerId: cert.issuerId,
+        issuerEmail: cert.issuerEmail,
+        expirationDate: cert.expirationDate,
+      }
+    }
+
+    // Cập nhật metadata với issuedDate và expirationDate mới
+    if (issuedDate) {
+      metadata.issuedDate = finalIssuedDate
+    }
+    metadata.expirationDate = finalExpirationDate
+    const newMetadataUri = await uploadJSON(metadata)
+
+    // Cập nhật cert
+    if (issuedDate) {
+      cert.issuedDate = finalIssuedDate
+    }
+    cert.expirationDate = finalExpirationDate
+    if (validityOptionId) {
+      cert.validityOptionId = validityOptionId
+    }
+    cert.metadataUri = newMetadataUri
+    await cert.save()
+
+    res.json({ 
+      ok: true, 
+      message: 'Đã cập nhật thời gian tồn tại',
+      issuedDate: finalIssuedDate,
+      expirationDate: finalExpirationDate
+    })
+  } catch (error: any) {
+    console.error("Update expiration date error:", error)
+    const errorMessage = error.message || "Có lỗi xảy ra khi cập nhật thời gian tồn tại"
+    res.status(500).json({ message: errorMessage })
+  }
+}
+
+// User reup cert đã bị reject (nếu allowReupload = true)
+export async function reuploadCert(req: any, res: any) {
+  const { id } = req.params
+  const { note, useOriginalFile, holderName, degree, credentialTypeId } = req.body
+  const file: Buffer = req.file?.buffer
+  const userId = req.user?.sub
+
+  if (!userId) return res.status(401).json({ message: 'Thiếu thông tin user' })
+  if (!note || !note.trim()) return res.status(400).json({ message: "Vui lòng nhập ghi chú trước khi reup" })
+
+  try {
+    const originalCert = await Cert.findById(id)
+    if (!originalCert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    if (originalCert.issuerId !== userId) return res.status(403).json({ message: 'Bạn không có quyền reup chứng chỉ này' })
+    if (originalCert.status !== CertStatus.REJECTED) return res.status(400).json({ message: 'Chỉ có thể reup chứng chỉ đã bị từ chối' })
+    if (!originalCert.allowReupload) return res.status(403).json({ message: 'Chứng chỉ này không được phép reup. Vui lòng liên hệ admin.' })
+
+    const { holderName, degree } = req.body
+    if (!holderName || !degree) return res.status(400).json({ message: "Thiếu thông tin: holderName, degree" })
+
+    let targetFile: Buffer
+    let originalHash: string
+
+    // Nếu chọn dùng file cũ, lấy từ pendingMetadata trong MongoDB
+    if (useOriginalFile === 'true' || useOriginalFile === true) {
+      if (!originalCert.pendingMetadata || !originalCert.pendingMetadata.file) {
+        return res.status(400).json({ message: "Không thể lấy file cũ. Vui lòng upload file mới." })
+      }
+      // Lấy file từ pendingMetadata trong MongoDB
+      targetFile = originalCert.pendingMetadata.file
+      originalHash = originalCert.pendingMetadata.hashBeforeWatermark || originalCert.originalHash || ''
+      if (!originalHash) {
+        return res.status(400).json({ message: "Không thể lấy hash của file cũ. Vui lòng upload file mới." })
+      }
+    } else {
+      // Upload file mới
+      if (!file) return res.status(400).json({ message: "Thiếu file" })
+      targetFile = file
+      originalHash = sha256Hex(file)
+    }
+    const existingCert = await Cert.findOne({ 
+      originalHash: originalHash,
+      issuerId: userId,
+      status: { $in: [CertStatus.PENDING, CertStatus.APPROVED, CertStatus.VALID] }
+    })
+    if (existingCert) return res.status(400).json({ message: "File này đã được upload. Vui lòng kiểm tra lịch sử upload." })
+
+    // Tạo ngày upload (và ngày cấp = ngày upload)
+    const certxIssuedDate = new Date().toISOString().split('T')[0]
+    const issuedDate = certxIssuedDate // Ngày cấp = ngày upload
+
+    // LƯU Ý: User reup KHÔNG thêm watermark, chỉ lưu file gốc
+    // Chỉ khi admin approve thì mới thêm watermark
+    const mimeType = await detectMime(targetFile)
+    const issuerEmail = req.user?.email
+    const issuerName = req.user?.name || issuerEmail || 'User'
+
+    // Lưu file gốc (chưa watermark) - docHash sẽ được tính lại khi approve
+    // Tạm thời dùng originalHash làm docHash (sẽ được cập nhật khi approve)
+    const tempDocHash = originalHash
+
+    // LƯU Ý: User reup chỉ lưu metadata và file gốc vào MongoDB, KHÔNG upload lên IPFS
+    // Chỉ khi admin approve thì mới thêm watermark, upload lên IPFS và ghi lên blockchain
+    // Lưu metadata và file gốc tạm thời vào MongoDB (chưa upload IPFS, chưa watermark)
+    const cert = await Cert.create({
+      docHash: tempDocHash, // Tạm thời dùng originalHash, sẽ được cập nhật khi approve
+      originalHash,
+      metadataUri: undefined, // Chưa có metadataUri vì chưa upload IPFS
+      holderName,
+      degree,
+      credentialTypeId: credentialTypeId || undefined, // Lưu credentialTypeId
+      issuedDate,
+      certxIssuedDate,
+      issuerName,
+      issuerId: userId,
+      issuerEmail,
+      status: CertStatus.PENDING,
+      pendingMetadata: {
+        file: targetFile, // Lưu file gốc (chưa watermark) vào MongoDB
+        mimeType,
+        hashBeforeWatermark: originalHash,
+        watermarkApplied: false, // Chưa có watermark
+        watermarkText: undefined,
+        watermarkOriginalText: undefined,
+        watermarkOpacity: config.WATERMARK_OPACITY,
+        watermarkColor: config.WATERMARK_COLOR,
+        watermarkRepeat: config.WATERMARK_REPEAT,
+        watermarkMargin: (config as any).WATERMARK_MARGIN ?? 0.12,
+        watermarkFontPath: (config as any).WATERMARK_FONT_PATH || undefined,
+        watermarkUsedCustomFont: false,
+        reuploadNote: note.trim(),
+        reuploadedFrom: originalCert.id,
+      },
+    })
+
+    // Sau khi reup thành công, tắt allowReupload của cert REJECTED gốc
+    // để không cho phép reup lại nữa (vì đã có cert PENDING mới)
+    originalCert.allowReupload = false
+    await originalCert.save()
+
+    res.json({ 
+      id: cert.id, docHash: cert.docHash, status: CertStatus.PENDING,
+      message: "File đã được reup thành công. Vui lòng chờ admin duyệt."
+    })
+  } catch (error: any) {
+    console.error("Reupload error:", error)
+    res.status(500).json({ message: error.message || "Có lỗi xảy ra khi reup file" })
+  }
+}
+
+// Admin xem trước file (từ pendingMetadata hoặc IPFS)
+export async function previewCertFile(req: any, res: any) {
+  const { id } = req.params
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+
+    let fileBuffer: Buffer | null = null
+    let mimeType: string = 'application/pdf'
+
+    // Nếu có pendingMetadata (chưa approve), lấy file từ MongoDB
+    if (cert.pendingMetadata && cert.pendingMetadata.file) {
+      fileBuffer = cert.pendingMetadata.file
+      mimeType = cert.pendingMetadata.mimeType || 'application/pdf'
+    } 
+    // Nếu đã approve, lấy từ IPFS
+    else if (cert.metadataUri) {
+      try {
+        const response = await fetch(cert.metadataUri)
+        if (response.ok) {
+          const metadata = await response.json()
+          const filePayload = metadata.file
+          
+          if (filePayload) {
+            // Convert file từ metadata về Buffer
+            if (filePayload.type === 'Buffer' && Array.isArray(filePayload.data)) {
+              fileBuffer = Buffer.from(filePayload.data)
+            } else if (Array.isArray(filePayload)) {
+              fileBuffer = Buffer.from(filePayload)
+            } else if (typeof filePayload === 'string') {
+              // Nếu là base64 string
+              fileBuffer = Buffer.from(filePayload, 'base64')
+            }
+            mimeType = metadata.mimeType || 'application/pdf'
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching file from IPFS:', error)
+      }
+    }
+
+    if (!fileBuffer) {
+      return res.status(404).json({ message: 'Không tìm thấy file để xem trước' })
+    }
+
+    // Trả về file với Content-Type phù hợp
+    res.setHeader('Content-Type', mimeType)
+    res.setHeader('Content-Disposition', `inline; filename="cert-${cert.id}.${mimeType === 'application/pdf' ? 'pdf' : 'jpg'}"`)
+    res.send(fileBuffer)
+  } catch (error: any) {
+    console.error("Preview error:", error)
+    res.status(500).json({ message: error.message || "Có lỗi xảy ra khi xem trước file" })
+  }
+}
+
+// Admin revoke cert
+export async function revokeCertByAdmin(req: any, res: any) {
+  const { id } = req.params
+  const adminId = req.user?.sub
+
+  if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    if (cert.status !== CertStatus.VALID) return res.status(400).json({ message: 'Chỉ có thể thu hồi chứng chỉ đã được cấp phát và còn hiệu lực' })
+    if (!cert.docHash) return res.status(400).json({ message: 'Chứng chỉ không có docHash' })
+
+    await revokeOnChain(cert.docHash)
+    cert.status = CertStatus.REVOKED
+    cert.revokedAt = new Date()
+    await cert.save()
+
+    res.json({ ok: true, message: 'Đã thu hồi chứng chỉ' })
+  } catch (error: any) {
+    console.error("Revoke cert error:", error)
+    res.status(500).json({ message: error.message || "Có lỗi xảy ra khi thu hồi chứng chỉ" })
+  }
 }

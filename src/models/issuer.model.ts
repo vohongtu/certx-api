@@ -1,5 +1,11 @@
 import { Schema, model } from "mongoose"
 
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN'
+}
+
 const IssuerSchema = new Schema(
   {
     email: { type: String, unique: true, index: true },
@@ -7,6 +13,7 @@ const IssuerSchema = new Schema(
     name: String,
     address: String,
     enabled: { type: Boolean, default: true },
+    role: { type: String, enum: Object.values(UserRole), default: UserRole.USER },
   },
   { timestamps: true }
 )
