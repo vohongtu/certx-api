@@ -5,6 +5,9 @@ import Cert, { CertStatus } from "../models/cert.model"
 import { config } from "../utils/env"
 import { uploadJSON } from "../services/ipfs.service"
 import { addWatermark, detectMime } from "../services/watermark.service"
+import { logAudit, getClientIp, getUserAgent } from "../services/audit.service"
+import { AuditAction, AuditStatus } from "../models/audit-log.model"
+import Issuer from "../models/issuer.model"
 
 // Helper function để tính toán status dựa trên expirationDate
 function calculateStatus(dbStatus: string, expirationDate?: string): string {
@@ -59,11 +62,15 @@ export async function issue(req: any, res: any) {
     return res.status(400).json({ message: "Thiếu file" })
   }
 
-  const { holderName, degree, issuedDate, expirationDate } = req.body
+  const { holderName, degree, issuedDate, expirationDate, userId } = req.body
   const issuerId = req.user?.sub
   const issuerEmail = req.user?.email
   const issuerName = req.user?.name || issuerEmail || 'Issuer'
+  const issuerRole = req.user?.role
   if (!issuerId) return res.status(401).json({ message: 'Thiếu thông tin issuer' })
+
+  // Lấy thông tin issuer để ghi audit log
+  const { email: userEmail, role: userRole } = await getUserInfoForAudit(issuerId, issuerRole)
 
   try {
     // 0) Tính hash của file gốc TRƯỚC KHI thêm watermark
@@ -175,7 +182,7 @@ export async function issue(req: any, res: any) {
     await issueOnChain(docHash, metadataUri)
 
     // 7) Lưu DB với originalHash để tracking
-    await Cert.create({
+    const cert = await Cert.create({
       docHash,
       originalHash, // Hash của file gốc (không watermark)
       metadataUri,
@@ -187,6 +194,7 @@ export async function issue(req: any, res: any) {
       issuerName,
       issuerId,
       issuerEmail,
+      userId: userId || undefined, // User ID nếu được chỉ định (optional)
       status: 'VALID',
     })
 
@@ -194,9 +202,43 @@ export async function issue(req: any, res: any) {
     const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${docHash}`
     const qrcodeDataUrl = await toDataURL(verifyUrl)
 
+    // Ghi log thành công
+    await logAudit({
+      userId: issuerId,
+      userEmail,
+      userRole,
+      action: AuditAction.CERT_ISSUE,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: cert.id,
+      details: {
+        holderName,
+        degree,
+        docHash,
+        issuedDate,
+        expirationDate: expirationDate || undefined,
+        isReIssue,
+        userId: userId || undefined,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ hash: docHash, verifyUrl, qrcodeDataUrl })
   } catch (error: any) {
     console.error("Issue error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId: issuerId,
+      userEmail,
+      userRole,
+      action: AuditAction.CERT_ISSUE,
+      status: AuditStatus.FAILURE,
+      errorMessage: error.message || "Có lỗi xảy ra khi cấp phát certificate",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
     
     // Xử lý lỗi từ smart contract
     if (error.reason === "exists") {
@@ -299,7 +341,13 @@ export async function listMyCerts(req: any, res: any) {
 
   // LƯU Ý: Không filter theo metadataUri vì cert PENDING chưa có metadataUri
   // User cần thấy cả cert PENDING (chưa approve) và cert đã approve
-  const filter: any = { issuerId }
+  // User cần thấy cả cert họ tự upload (issuerId) VÀ cert admin cấp phát cho họ (userId)
+  const filter: any = {
+    $or: [
+      { issuerId }, // Chứng chỉ user tự upload
+      { userId: issuerId } // Chứng chỉ admin cấp phát cho user này
+    ]
+  }
   // Lưu ý: EXPIRED được tính toán động, không lưu trong DB
   // Nếu filter theo EXPIRED, cần filter sau khi tính toán status
   if (status && status !== 'ALL' && status !== 'EXPIRED') {
@@ -310,20 +358,52 @@ export async function listMyCerts(req: any, res: any) {
   // EXPIRED sẽ được filter ở frontend hoặc sau khi tính toán
   if (q) {
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'i')
-    filter.$or = [
+    // Kết hợp search với điều kiện issuerId/userId
+    filter.$and = [
+      {
+        $or: [
+          { issuerId },
+          { userId: issuerId }
+        ]
+      },
+      {
+        $or: [
       { holderName: regex },
       { degree: regex },
       { docHash: regex },
     ]
+      }
+    ]
+    // Xóa filter.$or ban đầu vì đã chuyển vào $and
+    delete filter.$or
   }
 
   // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
   if (status === 'EXPIRED') {
     // EXPIRED chỉ áp dụng cho cert đã approve (có expirationDate)
-    const baseFilter: any = { issuerId, expirationDate: { $exists: true, $ne: null, $nin: [null, ''] } }
+    // Bao gồm cả cert user tự upload và cert admin cấp phát cho user
+    const baseFilter: any = {
+      $and: [
+        {
+          $or: [
+            { issuerId },
+            { userId: issuerId }
+          ]
+        },
+        {
+          expirationDate: { $exists: true, $ne: null, $nin: [null, ''] }
+        }
+      ]
+    }
     if (q) {
       const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\$&'), 'i')
-      baseFilter.$or = [{ holderName: regex }, { degree: regex }, { docHash: regex }]
+      baseFilter.$and.push({
+        $or: [
+          { holderName: regex },
+          { degree: regex },
+          { docHash: regex }
+        ]
+      })
     }
     
     const allCerts = await Cert.find(baseFilter)
@@ -379,51 +459,63 @@ export async function verify(req: any, res: any) {
   const { hash } = req.query
   if (!hash) return res.status(400).json({ message: "Thiếu hash" })
 
-  let onChainStatus: "VALID" | "REVOKED" | "NOT_FOUND" = "NOT_FOUND"
+  let finalStatus: "VALID" | "REVOKED" | "NOT_FOUND" = "NOT_FOUND"
   let metadataURI = ""
   let source: "chain" | "db" = "chain"
 
-  try {
-    const onChain = await getOnChain(hash)
-    const statusValue = Number(onChain.status)
-
-    if (statusValue === 1) onChainStatus = "VALID"
-    else if (statusValue === 2) onChainStatus = "REVOKED"
-
-    metadataURI = onChain.metadataURI
-  } catch (error) {
-    console.error("Verify on-chain error:", error)
-  }
-
-  // Nếu không tìm thấy trên chain hoặc đã REVOKED, check DB
-  // - Nếu REVOKED trên chain, có thể có bản re-issue VALID trong DB
-  // - Tìm bản VALID mới nhất trong DB
-  if (onChainStatus === "NOT_FOUND" || onChainStatus === "REVOKED" || !metadataURI) {
-    const validCert = await Cert.findOne({ 
-      docHash: hash, 
-      status: 'VALID' 
-    }).sort({ createdAt: -1 }) // Lấy bản mới nhất
+  // Ưu tiên check DB trước để lấy status mới nhất (bao gồm cả REVOKED)
+  // DB là source of truth vì được update ngay lập tức khi revoke
+  const dbCert = await Cert.findOne({ docHash: hash }).sort({ createdAt: -1 })
+  
+  if (dbCert) {
+    // Có trong DB → dùng status từ DB (ưu tiên)
+    finalStatus = dbCert.status === 'VALID' ? 'VALID' : dbCert.status === 'REVOKED' ? 'REVOKED' : 'NOT_FOUND'
+    metadataURI = dbCert.metadataUri ?? ""
+    source = "db"
     
-    if (validCert) {
-      // Có bản VALID trong DB → trả về VALID (có thể là re-issue)
-      onChainStatus = "VALID"
-      metadataURI = validCert.metadataUri ?? ""
-      source = "db"
-    } else if (onChainStatus === "NOT_FOUND") {
-      // Không tìm thấy trên chain và không có trong DB
-      // Tìm bất kỳ certificate nào trong DB (có thể là REVOKED)
-      const anyCert = await Cert.findOne({ docHash: hash }).sort({ createdAt: -1 })
-      if (anyCert) {
-        onChainStatus = anyCert.status as "VALID" | "REVOKED"
-        metadataURI = anyCert.metadataUri ?? ""
-        source = "db"
+    // Nếu DB status là VALID, vẫn check blockchain để xác nhận
+    // Nếu DB status là REVOKED, không cần check blockchain (DB là source of truth)
+    if (finalStatus === 'VALID') {
+      try {
+        const onChain = await getOnChain(hash)
+        const onChainStatusValue = Number(onChain.status)
+        
+        // Nếu blockchain trả về REVOKED nhưng DB là VALID → có thể là re-issue
+        // Giữ nguyên VALID từ DB
+        if (onChainStatusValue === 2) {
+          // Blockchain đã REVOKED, nhưng DB vẫn VALID → có thể là re-issue
+          // Giữ nguyên VALID từ DB
+        }
+        
+        // Nếu blockchain có metadataURI và DB không có, dùng từ blockchain
+        if (!metadataURI && onChain.metadataURI) {
+          metadataURI = onChain.metadataURI
+          source = "chain"
+        }
+      } catch (error) {
+        // Blockchain error → dùng DB
+        console.error("Verify on-chain error:", error)
       }
     }
-    // Nếu onChainStatus = REVOKED và không có bản VALID mới trong DB
-    // → giữ nguyên REVOKED từ chain
+  } else {
+    // Không có trong DB → check blockchain
+    try {
+      const onChain = await getOnChain(hash)
+      const statusValue = Number(onChain.status)
+
+      if (statusValue === 1) finalStatus = "VALID"
+      else if (statusValue === 2) finalStatus = "REVOKED"
+
+      metadataURI = onChain.metadataURI
+      source = "chain"
+    } catch (error) {
+      console.error("Verify on-chain error:", error)
+      // Không tìm thấy cả DB và blockchain
+      finalStatus = "NOT_FOUND"
+    }
   }
 
-  res.json({ status: onChainStatus, metadataURI, source })
+  res.json({ status: finalStatus, metadataURI, source })
 }
 
 export async function qrcode(req: any, res: any) {
@@ -447,12 +539,16 @@ export async function uploadFile(req: any, res: any) {
   const issuerId = req.user?.sub
   const issuerEmail = req.user?.email
   const issuerName = req.user?.name || issuerEmail || 'User'
+  const issuerRole = req.user?.role
 
   if (!holderName || !degree) {
     return res.status(400).json({ message: "Thiếu thông tin: holderName, degree" })
   }
 
   if (!issuerId) return res.status(401).json({ message: 'Thiếu thông tin user' })
+
+  // Lấy thông tin user để ghi audit log
+  const { email: userEmail, role: userRole } = await getUserInfoForAudit(issuerId, issuerRole)
 
   try {
     // Tính hash của file gốc
@@ -513,6 +609,25 @@ export async function uploadFile(req: any, res: any) {
       },
     })
 
+    // Ghi log thành công
+    await logAudit({
+      userId: issuerId,
+      userEmail,
+      userRole,
+      action: AuditAction.CERT_UPLOAD,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: cert.id,
+      details: {
+        holderName,
+        degree,
+        credentialTypeId: credentialTypeId || undefined,
+        originalHash: cert.originalHash,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ 
       id: cert.id,
       docHash: cert.docHash,
@@ -521,6 +636,18 @@ export async function uploadFile(req: any, res: any) {
     })
   } catch (error: any) {
     console.error("Upload error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId: issuerId,
+      userEmail,
+      userRole,
+      action: AuditAction.CERT_UPLOAD,
+      status: AuditStatus.FAILURE,
+      errorMessage: error.message || "Có lỗi xảy ra khi upload file",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
     
     if (error.message?.includes('IPFS') || error.message?.includes('Pinata')) {
       return res.status(503).json({ message: "Lỗi khi upload lên IPFS. Vui lòng thử lại sau." })
@@ -531,19 +658,69 @@ export async function uploadFile(req: any, res: any) {
   }
 }
 
+// Helper function để lấy thông tin user cho audit log
+async function getUserInfoForAudit(userId: string, userRole?: string): Promise<{ email: string; role: 'USER' | 'ADMIN' | 'SUPER_ADMIN' }> {
+  let email = 'unknown'
+  let role: 'USER' | 'ADMIN' | 'SUPER_ADMIN' = userRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : userRole === 'ADMIN' ? 'ADMIN' : 'USER'
+  
+  try {
+    const issuer = await Issuer.findById(userId)
+    if (issuer) {
+      email = issuer.email
+      role = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
+    }
+  } catch (err) {
+    // Nếu không lấy được, dùng giá trị mặc định
+  }
+  
+  return { email, role }
+}
+
 // Admin approve và cấp phát cert
 export async function approveCert(req: any, res: any) {
   const { id } = req.params
   const { issuedDate, expirationDate, validityOptionId, expirationMonths, expirationYears } = req.body
   const adminId = req.user?.sub
+  const adminRole = req.user?.role
 
   if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
 
+  // Lấy thông tin admin để ghi audit log
+  const { email: adminEmail, role: userRole } = await getUserInfoForAudit(adminId, adminRole)
+
   try {
     const cert = await Cert.findById(id)
-    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    if (!cert) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_APPROVE,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Không tìm thấy chứng chỉ',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    }
 
     if (cert.status !== CertStatus.PENDING) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_APPROVE,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Chứng chỉ này không ở trạng thái chờ duyệt',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
       return res.status(400).json({ message: 'Chứng chỉ này không ở trạng thái chờ duyệt' })
     }
 
@@ -621,6 +798,7 @@ export async function approveCert(req: any, res: any) {
       docHash: docHash, // Hash của file đã watermark
       issuerId: cert.issuerId,
       issuerEmail: cert.issuerEmail,
+      approvedBy: adminId, // ID của admin đã approve (người duyệt)
       expirationDate: finalExpirationDate,
       mimeType: cert.pendingMetadata.mimeType,
       hashBeforeWatermark: cert.pendingMetadata.hashBeforeWatermark,
@@ -664,6 +842,27 @@ export async function approveCert(req: any, res: any) {
     const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${cert.docHash}`
     const qrcodeDataUrl = await toDataURL(verifyUrl)
 
+    // Ghi log thành công
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_APPROVE,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: id,
+      details: {
+        holderName: cert.holderName,
+        degree: cert.degree,
+        docHash: cert.docHash,
+        issuedDate: certIssuedDate,
+        expirationDate: finalExpirationDate,
+        approvedAt: cert.approvedAt,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ 
       ok: true, 
       hash: cert.docHash, 
@@ -673,6 +872,20 @@ export async function approveCert(req: any, res: any) {
     })
   } catch (error: any) {
     console.error("Approve error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_APPROVE,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: error.message || "Có lỗi xảy ra khi duyệt chứng chỉ",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
     
     if (error.reason === "exists") {
       return res.status(400).json({ message: "Certificate này đã tồn tại trên blockchain" })
@@ -692,18 +905,63 @@ export async function rejectCert(req: any, res: any) {
   const { id } = req.params
   const { rejectionReason, allowReupload } = req.body
   const adminId = req.user?.sub
+  const adminRole = req.user?.role
 
   if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
 
+  // Lấy thông tin admin để ghi audit log
+  const { email: adminEmail, role: userRole } = await getUserInfoForAudit(adminId, adminRole)
+
   if (!rejectionReason || rejectionReason.trim() === '') {
+    // Ghi log thất bại
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_REJECT,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: 'Vui lòng nhập lý do từ chối',
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
     return res.status(400).json({ message: 'Vui lòng nhập lý do từ chối' })
   }
 
   try {
     const cert = await Cert.findById(id)
-    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    if (!cert) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_REJECT,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Không tìm thấy chứng chỉ',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    }
 
     if (cert.status !== CertStatus.PENDING) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_REJECT,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Chứng chỉ này không ở trạng thái chờ duyệt',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
       return res.status(400).json({ message: 'Chứng chỉ này không ở trạng thái chờ duyệt' })
     }
 
@@ -714,9 +972,44 @@ export async function rejectCert(req: any, res: any) {
     cert.rejectedAt = new Date()
     await cert.save()
 
+    // Ghi log thành công
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_REJECT,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: id,
+      details: {
+        holderName: cert.holderName,
+        degree: cert.degree,
+        rejectionReason: cert.rejectionReason,
+        allowReupload: cert.allowReupload,
+        rejectedAt: cert.rejectedAt,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ ok: true, message: 'Đã từ chối chứng chỉ', allowReupload: cert.allowReupload })
   } catch (error: any) {
     console.error("Reject error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_REJECT,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: error.message || "Có lỗi xảy ra khi từ chối chứng chỉ",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+    
     const errorMessage = error.message || "Có lỗi xảy ra khi từ chối chứng chỉ"
     res.status(500).json({ message: errorMessage })
   }
@@ -1099,23 +1392,262 @@ export async function previewCertFile(req: any, res: any) {
 export async function revokeCertByAdmin(req: any, res: any) {
   const { id } = req.params
   const adminId = req.user?.sub
+  const adminRole = req.user?.role
 
   if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
 
+  // Lấy thông tin admin để ghi audit log
+  const { email: adminEmail, role: userRole } = await getUserInfoForAudit(adminId, adminRole)
+
   try {
     const cert = await Cert.findById(id)
-    if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
-    if (cert.status !== CertStatus.VALID) return res.status(400).json({ message: 'Chỉ có thể thu hồi chứng chỉ đã được cấp phát và còn hiệu lực' })
-    if (!cert.docHash) return res.status(400).json({ message: 'Chứng chỉ không có docHash' })
+    if (!cert) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_REVOKE,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Không tìm thấy chứng chỉ',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    }
+    
+    if (cert.status !== CertStatus.VALID) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_REVOKE,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Chỉ có thể thu hồi chứng chỉ đã được cấp phát và còn hiệu lực',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(400).json({ message: 'Chỉ có thể thu hồi chứng chỉ đã được cấp phát và còn hiệu lực' })
+    }
+    
+    if (!cert.docHash) {
+      // Ghi log thất bại
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_REVOKE,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Chứng chỉ không có docHash',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(400).json({ message: 'Chứng chỉ không có docHash' })
+    }
 
     await revokeOnChain(cert.docHash)
     cert.status = CertStatus.REVOKED
     cert.revokedAt = new Date()
     await cert.save()
 
+    // Ghi log thành công
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_REVOKE,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: id,
+      details: {
+        holderName: cert.holderName,
+        degree: cert.degree,
+        docHash: cert.docHash,
+        revokedAt: cert.revokedAt,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ ok: true, message: 'Đã thu hồi chứng chỉ' })
   } catch (error: any) {
     console.error("Revoke cert error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_REVOKE,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: error.message || "Có lỗi xảy ra khi thu hồi chứng chỉ",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+    
     res.status(500).json({ message: error.message || "Có lỗi xảy ra khi thu hồi chứng chỉ" })
+  }
+}
+
+// Super admin chuyển người nhận chứng chỉ
+export async function transferCertificate(req: any, res: any) {
+  const { id } = req.params
+  const { newUserId, note, holderName } = req.body
+  const adminId = req.user?.sub
+  const adminRole = req.user?.role
+
+  if (!adminId) return res.status(401).json({ message: 'Thiếu thông tin admin' })
+  if (adminRole !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Chỉ super admin mới có quyền chuyển người nhận chứng chỉ' })
+  }
+
+  if (!newUserId) {
+    return res.status(400).json({ message: 'Thiếu thông tin người nhận mới' })
+  }
+
+  if (!note || !note.trim()) {
+    return res.status(400).json({ message: 'Vui lòng nhập ghi chú khi chuyển chứng chỉ' })
+  }
+
+  const { email: adminEmail, role: userRole } = await getUserInfoForAudit(adminId, adminRole)
+
+  try {
+    const cert = await Cert.findById(id)
+    if (!cert) {
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_TRANSFER,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Không tìm thấy chứng chỉ',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+    }
+
+    // Chỉ cho phép chuyển chứng chỉ đã được cấp phát (VALID hoặc APPROVED)
+    if (cert.status !== CertStatus.VALID && cert.status !== CertStatus.APPROVED) {
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_TRANSFER,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Chỉ có thể chuyển chứng chỉ đã được cấp phát',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(400).json({ message: 'Chỉ có thể chuyển chứng chỉ đã được cấp phát' })
+    }
+
+    // Kiểm tra user mới có tồn tại không
+    const newUser = await Issuer.findById(newUserId)
+    if (!newUser) {
+      await logAudit({
+        userId: adminId,
+        userEmail: adminEmail,
+        userRole,
+        action: AuditAction.CERT_TRANSFER,
+        status: AuditStatus.FAILURE,
+        resourceType: 'cert',
+        resourceId: id,
+        errorMessage: 'Không tìm thấy người nhận mới',
+        ipAddress: getClientIp(req),
+        userAgent: getUserAgent(req),
+      })
+      return res.status(404).json({ message: 'Không tìm thấy người nhận mới' })
+    }
+
+    // Lấy thông tin user cũ
+    const oldUserId = cert.userId
+    const oldUser = oldUserId ? await Issuer.findById(oldUserId) : null
+
+    // Cập nhật userId và holderName (tên người nhận mới)
+    cert.userId = newUserId
+    // Nếu có holderName từ request, dùng nó; nếu không, dùng tên từ user mới
+    if (holderName && holderName.trim()) {
+      cert.holderName = holderName.trim()
+    } else {
+      cert.holderName = newUser.name || newUser.email || cert.holderName || 'Unknown'
+    }
+
+    // Lưu lịch sử chuyển đổi vào details (có thể mở rộng sau)
+    if (!cert.details) {
+      cert.details = {}
+    }
+    if (!cert.details.transferHistory) {
+      cert.details.transferHistory = []
+    }
+    cert.details.transferHistory.push({
+      fromUserId: oldUserId || null,
+      fromUserEmail: oldUser?.email || null,
+      toUserId: newUserId,
+      toUserEmail: newUser.email,
+      transferredBy: adminId,
+      transferredByEmail: adminEmail,
+      note: note.trim(),
+      transferredAt: new Date(),
+    })
+
+    await cert.save()
+
+    // Ghi audit log thành công
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_TRANSFER,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: id,
+      details: {
+        holderName: cert.holderName,
+        degree: cert.degree,
+        docHash: cert.docHash,
+        oldUserId: oldUserId || null,
+        oldUserEmail: oldUser?.email || null,
+        newUserId: newUserId,
+        newUserEmail: newUser.email,
+        note: note.trim(),
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
+    res.json({ 
+      ok: true, 
+      message: 'Đã chuyển chứng chỉ thành công',
+      cert: mapCertToResponse(cert)
+    })
+  } catch (error: any) {
+    console.error("Transfer cert error:", error)
+    await logAudit({
+      userId: adminId,
+      userEmail: adminEmail,
+      userRole,
+      action: AuditAction.CERT_TRANSFER,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: error.message || "Có lỗi xảy ra khi chuyển chứng chỉ",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+    res.status(500).json({ message: error.message || "Có lỗi xảy ra khi chuyển chứng chỉ" })
   }
 }

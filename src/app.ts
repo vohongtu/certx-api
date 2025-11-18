@@ -4,6 +4,7 @@ import authRoutes from './routes/auth.routes'
 import certRoutes from './routes/certs.routes'
 import credentialTypesRoutes from './routes/credential-types.routes'
 import credentialValidityOptionsRoutes from './routes/credential-validity-options.routes'
+import auditRoutes from './routes/audit.routes'
 
 export const app = express()
 
@@ -34,6 +35,7 @@ app.use('/auth', authRoutes)
 app.use('/', certRoutes) // /certs/*, /verify, /qrcode
 app.use('/', credentialTypesRoutes) // /credential-types/*
 app.use('/', credentialValidityOptionsRoutes) // /credential-validity-options/*
+app.use('/audit', auditRoutes) // /audit/* (chỉ SUPER_ADMIN)
 
 // error fallback
 app.use((err: any, _req: any, res: any, _next: any) => {

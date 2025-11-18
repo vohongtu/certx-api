@@ -22,6 +22,7 @@ const CertSchema = new Schema({
   issuerName: String,
   issuerId: { type: String, index: true },
   issuerEmail: String,
+  userId: { type: String, index: true }, // User ID nếu được chỉ định (optional, dùng khi admin cấp phát cho user cụ thể)
   status: { type: String, enum: Object.values(CertStatus), default: CertStatus.PENDING },
   revokedAt: Date,
   rejectionReason: String, // Lý do từ chối (nếu bị reject)
@@ -47,6 +48,7 @@ const CertSchema = new Schema({
   rejectedBy: String, // ID của admin đã reject
   approvedAt: Date, // Ngày approve
   rejectedAt: Date, // Ngày reject
+  details: Schema.Types.Mixed, // Chi tiết bổ sung (transferHistory, etc.)
 }, { timestamps: true })
 
 export default model('Cert', CertSchema)

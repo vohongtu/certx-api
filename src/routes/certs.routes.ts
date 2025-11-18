@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { requireAuth, requireAdmin } from '../middlewares/auth'
+import { requireAuth, requireAdmin, requireSuperAdmin } from '../middlewares/auth'
 import { upload } from '../middlewares/upload'
-import { issue, revoke, verify, qrcode, listMyCerts, uploadFile, approveCert, rejectCert, listPendingCerts, updateExpirationDate, reuploadCert, revokeCertByAdmin, previewCertFile } from '../controllers/certs.controller'
+import { issue, revoke, verify, qrcode, listMyCerts, uploadFile, approveCert, rejectCert, listPendingCerts, updateExpirationDate, reuploadCert, revokeCertByAdmin, previewCertFile, transferCertificate } from '../controllers/certs.controller'
 import { listUsers, createUser, updateUser, deleteUser } from '../controllers/users.controller'
 import multer from 'multer'
 
@@ -63,6 +63,7 @@ r.post('/certs/:id/approve', requireAdmin, approveCert) // Admin approve cert
 r.post('/certs/:id/reject', requireAdmin, rejectCert) // Admin reject cert
 r.put('/certs/:id/expiration', requireAdmin, updateExpirationDate) // Admin chỉnh sửa thời gian tồn tại
 r.post('/certs/:id/revoke', requireAdmin, revokeCertByAdmin) // Admin revoke cert
+r.post('/certs/:id/transfer', requireSuperAdmin, transferCertificate) // Super admin chuyển người nhận chứng chỉ
 r.get('/users', requireAdmin, listUsers) // Admin xem danh sách users
 r.post('/users', requireAdmin, createUser) // Admin tạo user
 r.put('/users/:id', requireAdmin, updateUser) // Admin sửa user
