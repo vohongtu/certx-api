@@ -47,15 +47,15 @@ export async function listAuditLogs(req: any, res: Response) {
     if (startDate || endDate) {
       filter.createdAt = {}
       if (startDate) {
-        // Set startDate về đầu ngày (00:00:00.000)
-        const start = new Date(startDate)
-        start.setHours(0, 0, 0, 0)
+        // Parse date string YYYY-MM-DD thành local date (không bị ảnh hưởng bởi timezone)
+        const [year, month, day] = startDate.split('-').map(Number)
+        const start = new Date(year, month - 1, day, 0, 0, 0, 0)
         filter.createdAt.$gte = start
       }
       if (endDate) {
-        // Set endDate về cuối ngày (23:59:59.999) để bao gồm cả ngày đó
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
+        // Parse date string YYYY-MM-DD thành local date và set về cuối ngày (23:59:59.999)
+        const [year, month, day] = endDate.split('-').map(Number)
+        const end = new Date(year, month - 1, day, 23, 59, 59, 999)
         filter.createdAt.$lte = end
       }
     }
@@ -97,13 +97,27 @@ export async function listAuditLogs(req: any, res: Response) {
 
 export async function getAuditStats(req: any, res: Response) {
   try {
-    let startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30 ngày trước
-    let endDate = req.query.endDate ? new Date(req.query.endDate) : new Date()
+    let startDate: Date
+    let endDate: Date
 
-    // Set startDate về đầu ngày (00:00:00.000)
-    startDate.setHours(0, 0, 0, 0)
-    // Set endDate về cuối ngày (23:59:59.999) để bao gồm cả ngày đó
-    endDate.setHours(23, 59, 59, 999)
+    if (req.query.startDate) {
+      // Parse date string YYYY-MM-DD thành local date (không bị ảnh hưởng bởi timezone)
+      const [year, month, day] = req.query.startDate.split('-').map(Number)
+      startDate = new Date(year, month - 1, day, 0, 0, 0, 0)
+    } else {
+      // 30 ngày trước
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      startDate.setHours(0, 0, 0, 0)
+    }
+
+    if (req.query.endDate) {
+      // Parse date string YYYY-MM-DD thành local date và set về cuối ngày (23:59:59.999)
+      const [year, month, day] = req.query.endDate.split('-').map(Number)
+      endDate = new Date(year, month - 1, day, 23, 59, 59, 999)
+    } else {
+      endDate = new Date()
+      endDate.setHours(23, 59, 59, 999)
+    }
 
     const filter = {
       createdAt: {

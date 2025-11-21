@@ -10,7 +10,7 @@ export async function login(req: any, res: any) {
   const { email, password } = req.body
   
   try {
-    const user = await Issuer.findOne({ email, enabled: true })
+  const user = await Issuer.findOne({ email, enabled: true })
 
     if (!user || !user.passwordHash) {
       // Ghi log thất bại
@@ -27,7 +27,7 @@ export async function login(req: any, res: any) {
       return res.status(401).json({ message: "Sai thông tin" })
     }
 
-    const ok = await bcrypt.compare(password, user.passwordHash)
+  const ok = await bcrypt.compare(password, user.passwordHash)
     if (!ok) {
       // Ghi log thất bại
       await logAudit({
@@ -43,13 +43,13 @@ export async function login(req: any, res: any) {
       return res.status(401).json({ message: "Sai thông tin" })
     }
 
-    const token = jwt.sign(
-      { sub: user.id, email: user.email, role: user.role || UserRole.USER, address: user.address, name: user.name },
-      config.JWT_SECRET,
-      {
-        expiresIn: "1d",
-      }
-    )
+  const token = jwt.sign(
+    { sub: user.id, email: user.email, role: user.role || UserRole.USER, address: user.address, name: user.name },
+    config.JWT_SECRET,
+    {
+      expiresIn: "1d",
+    }
+  )
 
     // Ghi log thành công
     await logAudit({
@@ -62,7 +62,7 @@ export async function login(req: any, res: any) {
       userAgent: getUserAgent(req),
     })
 
-    res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role || UserRole.USER } })
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role || UserRole.USER } })
   } catch (error: any) {
     // Ghi log thất bại
     await logAudit({
@@ -95,10 +95,10 @@ export async function register(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(400).json({ message: "Thiếu email, password hoặc họ tên" })
+    return res.status(400).json({ message: "Thiếu email, password hoặc họ tên" })
     }
 
-    const existing = await Issuer.findOne({ email })
+  const existing = await Issuer.findOne({ email })
     if (existing) {
       // Ghi log thất bại
       await logAudit({
@@ -114,13 +114,13 @@ export async function register(req: any, res: any) {
       return res.status(400).json({ message: "Email đã tồn tại" })
     }
 
-    const hash = await bcrypt.hash(password, 10)
-    const user = await Issuer.create({ email, name, passwordHash: hash, address: address || undefined, role: UserRole.USER })
+  const hash = await bcrypt.hash(password, 10)
+  const user = await Issuer.create({ email, name, passwordHash: hash, address: address || undefined, role: UserRole.USER })
 
-    // Chỉ whitelist nếu có address
-    if (address) {
-      await whiteListIssuer(address, true)
-    }
+  // Chỉ whitelist nếu có address
+  if (address) {
+  await whiteListIssuer(address, true)
+  }
 
     // Ghi log thành công
     await logAudit({
@@ -137,7 +137,7 @@ export async function register(req: any, res: any) {
       userAgent: getUserAgent(req),
     })
 
-    res.json({ id: user.id, email: user.email, name: user.name, role: user.role })
+  res.json({ id: user.id, email: user.email, name: user.name, role: user.role })
   } catch (error: any) {
     // Ghi log thất bại
     await logAudit({

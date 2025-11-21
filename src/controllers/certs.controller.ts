@@ -476,10 +476,10 @@ export async function verify(req: any, res: any) {
     // Nếu DB status là VALID, vẫn check blockchain để xác nhận
     // Nếu DB status là REVOKED, không cần check blockchain (DB là source of truth)
     if (finalStatus === 'VALID') {
-      try {
-        const onChain = await getOnChain(hash)
+  try {
+    const onChain = await getOnChain(hash)
         const onChainStatusValue = Number(onChain.status)
-        
+
         // Nếu blockchain trả về REVOKED nhưng DB là VALID → có thể là re-issue
         // Giữ nguyên VALID từ DB
         if (onChainStatusValue === 2) {
@@ -489,13 +489,13 @@ export async function verify(req: any, res: any) {
         
         // Nếu blockchain có metadataURI và DB không có, dùng từ blockchain
         if (!metadataURI && onChain.metadataURI) {
-          metadataURI = onChain.metadataURI
+    metadataURI = onChain.metadataURI
           source = "chain"
         }
-      } catch (error) {
+  } catch (error) {
         // Blockchain error → dùng DB
-        console.error("Verify on-chain error:", error)
-      }
+    console.error("Verify on-chain error:", error)
+  }
     }
   } else {
     // Không có trong DB → check blockchain

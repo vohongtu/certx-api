@@ -77,7 +77,7 @@ export async function getCredentialTypeById(req: any, res: any) {
 
 // Tạo credential type mới (Admin only)
 export async function createCredentialType(req: any, res: any) {
-  const { id, name, isPermanent } = req.body
+    const { id, name, isPermanent } = req.body
   const currentUserId = req.user?.sub
   const currentUserRole = req.user?.role
 
@@ -96,7 +96,7 @@ export async function createCredentialType(req: any, res: any) {
   }
 
   // Validate input
-  if (!id || !name || typeof isPermanent !== 'boolean') {
+    if (!id || !name || typeof isPermanent !== 'boolean') {
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -107,9 +107,9 @@ export async function createCredentialType(req: any, res: any) {
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
     })
-    return res.status(400).json({ message: 'Thiếu thông tin: id, name, isPermanent' })
-  }
-
+      return res.status(400).json({ message: 'Thiếu thông tin: id, name, isPermanent' })
+    }
+    
   try {
     // Kiểm tra id đã tồn tại chưa
     const existing = await CredentialType.findOne({ id })
@@ -128,7 +128,7 @@ export async function createCredentialType(req: any, res: any) {
       })
       return res.status(400).json({ message: 'ID đã tồn tại' })
     }
-
+    
     const credentialType = await CredentialType.create({
       id,
       name,
@@ -152,7 +152,7 @@ export async function createCredentialType(req: any, res: any) {
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
     })
-
+    
     res.status(201).json(credentialType)
   } catch (error: any) {
     console.error('Error creating credential type:', error)
@@ -180,8 +180,8 @@ export async function createCredentialType(req: any, res: any) {
 
 // Cập nhật credential type (Admin only)
 export async function updateCredentialType(req: any, res: any) {
-  const { id } = req.params
-  const { name, isPermanent } = req.body
+    const { id } = req.params
+    const { name, isPermanent } = req.body
   const currentUserId = req.user?.sub
   const currentUserRole = req.user?.role
 
@@ -219,10 +219,10 @@ export async function updateCredentialType(req: any, res: any) {
 
     const oldName = credentialType.name
     const oldIsPermanent = credentialType.isPermanent
-
+    
     if (name !== undefined) credentialType.name = name
     if (isPermanent !== undefined) credentialType.isPermanent = isPermanent
-
+    
     await credentialType.save()
 
     // Ghi log thành công
@@ -246,7 +246,7 @@ export async function updateCredentialType(req: any, res: any) {
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
     })
-
+    
     res.json(credentialType)
   } catch (error: any) {
     console.error('Error updating credential type:', error)
@@ -306,7 +306,7 @@ export async function deleteCredentialType(req: any, res: any) {
       })
       return res.status(404).json({ message: 'Không tìm thấy loại văn bằng' })
     }
-
+    
     // Kiểm tra xem có validity options nào đang sử dụng credential type này không
     const validityOptionsCount = await CredentialValidityOption.countDocuments({ credentialTypeId: id })
     if (validityOptionsCount > 0) {
@@ -322,8 +322,8 @@ export async function deleteCredentialType(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(400).json({
-        message: `Không thể xóa loại văn bằng này vì đang có ${validityOptionsCount} tùy chọn thời hạn đang sử dụng. Vui lòng xóa các tùy chọn thời hạn trước.`
+      return res.status(400).json({ 
+        message: `Không thể xóa loại văn bằng này vì đang có ${validityOptionsCount} tùy chọn thời hạn đang sử dụng. Vui lòng xóa các tùy chọn thời hạn trước.` 
       })
     }
 
@@ -332,7 +332,7 @@ export async function deleteCredentialType(req: any, res: any) {
       name: credentialType.name,
       isPermanent: credentialType.isPermanent,
     }
-
+    
     await CredentialType.deleteOne({ id })
 
     // Ghi log thành công
@@ -352,7 +352,7 @@ export async function deleteCredentialType(req: any, res: any) {
       ipAddress: getClientIp(req),
       userAgent: getUserAgent(req),
     })
-
+    
     res.json({ message: 'Đã xóa loại văn bằng thành công' })
   } catch (error: any) {
     console.error('Error deleting credential type:', error)

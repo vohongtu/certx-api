@@ -93,7 +93,7 @@ export async function createUser(req: any, res: any) {
   }
 
   try {
-    if (!email || !password || !name) {
+  if (!email || !password || !name) {
       // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
@@ -105,11 +105,11 @@ export async function createUser(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(400).json({ message: "Thiếu email, password hoặc name" })
-    }
+    return res.status(400).json({ message: "Thiếu email, password hoặc name" })
+  }
 
-    // Admin chỉ có thể tạo USER
-    if (currentUserRole === UserRole.ADMIN && requestedRole && requestedRole !== UserRole.USER) {
+  // Admin chỉ có thể tạo USER
+  if (currentUserRole === UserRole.ADMIN && requestedRole && requestedRole !== UserRole.USER) {
       // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
@@ -121,23 +121,23 @@ export async function createUser(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(403).json({ message: "Admin chỉ có thể tạo user" })
-    }
+    return res.status(403).json({ message: "Admin chỉ có thể tạo user" })
+  }
 
-    // Super admin có thể tạo SUPER_ADMIN, ADMIN hoặc USER
-    let role = UserRole.USER
-    if (currentUserRole === UserRole.SUPER_ADMIN && requestedRole) {
-      if (requestedRole === UserRole.SUPER_ADMIN) {
-        role = UserRole.SUPER_ADMIN
-      } else if (requestedRole === UserRole.ADMIN) {
-        role = UserRole.ADMIN
-      } else {
-        role = UserRole.USER
-      }
+  // Super admin có thể tạo SUPER_ADMIN, ADMIN hoặc USER
+  let role = UserRole.USER
+  if (currentUserRole === UserRole.SUPER_ADMIN && requestedRole) {
+    if (requestedRole === UserRole.SUPER_ADMIN) {
+      role = UserRole.SUPER_ADMIN
+    } else if (requestedRole === UserRole.ADMIN) {
+      role = UserRole.ADMIN
+    } else {
+      role = UserRole.USER
     }
+  }
 
-    // Nếu tạo ADMIN hoặc SUPER_ADMIN thì bắt buộc phải có address
-    if ((role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN) && !address) {
+  // Nếu tạo ADMIN hoặc SUPER_ADMIN thì bắt buộc phải có address
+  if ((role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN) && !address) {
       // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
@@ -149,13 +149,13 @@ export async function createUser(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(400).json({ message: `Tạo tài khoản ${role === UserRole.SUPER_ADMIN ? 'super admin' : 'admin'} cần có địa chỉ ETH` })
-    }
+    return res.status(400).json({ message: `Tạo tài khoản ${role === UserRole.SUPER_ADMIN ? 'super admin' : 'admin'} cần có địa chỉ ETH` })
+  }
 
-    // Nếu tạo USER thì không cần address
-    const finalAddress = role === UserRole.USER ? '' : (address || '')
+  // Nếu tạo USER thì không cần address
+  const finalAddress = role === UserRole.USER ? '' : (address || '')
 
-    const existing = await Issuer.findOne({ email })
+  const existing = await Issuer.findOne({ email })
     if (existing) {
       // Ghi log thất bại
       await logAudit({
@@ -171,19 +171,19 @@ export async function createUser(req: any, res: any) {
       return res.status(400).json({ message: "Email đã tồn tại" })
     }
 
-    const hash = await bcrypt.hash(password, 10)
-    const user = await Issuer.create({ 
-      email, 
-      name, 
-      passwordHash: hash, 
-      address: finalAddress, 
-      role 
-    })
+  const hash = await bcrypt.hash(password, 10)
+  const user = await Issuer.create({ 
+    email, 
+    name, 
+    passwordHash: hash, 
+    address: finalAddress, 
+    role 
+  })
 
-    // Whitelist address nếu có và là ADMIN hoặc SUPER_ADMIN
-    if (finalAddress && (role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN)) {
-      await whiteListIssuer(finalAddress, true)
-    }
+  // Whitelist address nếu có và là ADMIN hoặc SUPER_ADMIN
+  if (finalAddress && (role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN)) {
+    await whiteListIssuer(finalAddress, true)
+  }
 
     // Ghi log thành công
     await logAudit({
@@ -204,14 +204,14 @@ export async function createUser(req: any, res: any) {
       userAgent: getUserAgent(req),
     })
 
-    res.json({ 
-      id: user.id, 
-      email: user.email, 
-      name: user.name, 
-      address: user.address, 
-      role: user.role,
-      enabled: user.enabled
-    })
+  res.json({ 
+    id: user.id, 
+    email: user.email, 
+    name: user.name, 
+    address: user.address, 
+    role: user.role,
+    enabled: user.enabled
+  })
   } catch (error: any) {
     // Ghi log thất bại
     await logAudit({
@@ -250,7 +250,7 @@ export async function updateUser(req: any, res: any) {
   }
 
   try {
-    const user = await Issuer.findById(id)
+  const user = await Issuer.findById(id)
     if (!user) {
       // Ghi log thất bại
       await logAudit({
@@ -268,9 +268,9 @@ export async function updateUser(req: any, res: any) {
       return res.status(404).json({ message: "Không tìm thấy user" })
     }
 
-    // Admin không thể sửa admin hoặc super admin
-    if (currentUserRole === UserRole.ADMIN) {
-      if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
+  // Admin không thể sửa admin hoặc super admin
+  if (currentUserRole === UserRole.ADMIN) {
+    if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
         // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
@@ -284,10 +284,10 @@ export async function updateUser(req: any, res: any) {
           ipAddress: getClientIp(req),
           userAgent: getUserAgent(req),
         })
-        return res.status(403).json({ message: "Admin không thể sửa admin hoặc super admin" })
-      }
-      // Admin không thể thay đổi role
-      if (requestedRole && requestedRole !== user.role) {
+      return res.status(403).json({ message: "Admin không thể sửa admin hoặc super admin" })
+    }
+    // Admin không thể thay đổi role
+    if (requestedRole && requestedRole !== user.role) {
         // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
@@ -301,13 +301,13 @@ export async function updateUser(req: any, res: any) {
           ipAddress: getClientIp(req),
           userAgent: getUserAgent(req),
         })
-        return res.status(403).json({ message: "Admin không thể thay đổi role" })
-      }
+      return res.status(403).json({ message: "Admin không thể thay đổi role" })
     }
+  }
 
-    // Super admin có thể sửa admin (nhưng không thể sửa super admin khác)
-    if (currentUserRole === UserRole.SUPER_ADMIN) {
-      if (user.role === UserRole.SUPER_ADMIN && user.id !== currentUserId) {
+  // Super admin có thể sửa admin (nhưng không thể sửa super admin khác)
+  if (currentUserRole === UserRole.SUPER_ADMIN) {
+    if (user.role === UserRole.SUPER_ADMIN && user.id !== currentUserId) {
         // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
@@ -321,13 +321,13 @@ export async function updateUser(req: any, res: any) {
           ipAddress: getClientIp(req),
           userAgent: getUserAgent(req),
         })
-        return res.status(403).json({ message: "Không thể sửa super admin khác" })
-      }
-      // Super admin có thể thay đổi role (bao gồm cả SUPER_ADMIN)
-      if (requestedRole) {
-        user.role = requestedRole as UserRole
-        // Nếu thay đổi thành ADMIN hoặc SUPER_ADMIN mà không có address thì yêu cầu
-        if ((requestedRole === UserRole.ADMIN || requestedRole === UserRole.SUPER_ADMIN) && !address) {
+      return res.status(403).json({ message: "Không thể sửa super admin khác" })
+    }
+    // Super admin có thể thay đổi role (bao gồm cả SUPER_ADMIN)
+    if (requestedRole) {
+      user.role = requestedRole as UserRole
+      // Nếu thay đổi thành ADMIN hoặc SUPER_ADMIN mà không có address thì yêu cầu
+      if ((requestedRole === UserRole.ADMIN || requestedRole === UserRole.SUPER_ADMIN) && !address) {
           // Ghi log thất bại
           await logAudit({
             userId: currentUserId,
@@ -341,18 +341,18 @@ export async function updateUser(req: any, res: any) {
             ipAddress: getClientIp(req),
             userAgent: getUserAgent(req),
           })
-          return res.status(400).json({ message: `Thay đổi role thành ${requestedRole === UserRole.SUPER_ADMIN ? 'super admin' : 'admin'} cần có địa chỉ ETH` })
-        }
+        return res.status(400).json({ message: `Thay đổi role thành ${requestedRole === UserRole.SUPER_ADMIN ? 'super admin' : 'admin'} cần có địa chỉ ETH` })
       }
     }
+  }
 
     const oldRole = user.role
     const oldEmail = user.email
     const oldEnabled = user.enabled
 
-    if (name) user.name = name
-    if (email && email !== user.email) {
-      const existing = await Issuer.findOne({ email })
+  if (name) user.name = name
+  if (email && email !== user.email) {
+    const existing = await Issuer.findOne({ email })
       if (existing) {
         // Ghi log thất bại
         await logAudit({
@@ -369,15 +369,15 @@ export async function updateUser(req: any, res: any) {
         })
         return res.status(400).json({ message: "Email đã tồn tại" })
       }
-      user.email = email
-    }
-    if (address !== undefined) user.address = address
-    if (enabled !== undefined) user.enabled = enabled
-    if (password) {
-      user.passwordHash = await bcrypt.hash(password, 10)
-    }
+    user.email = email
+  }
+  if (address !== undefined) user.address = address
+  if (enabled !== undefined) user.enabled = enabled
+  if (password) {
+    user.passwordHash = await bcrypt.hash(password, 10)
+  }
 
-    await user.save()
+  await user.save()
 
     // Ghi log thành công
     await logAudit({
@@ -405,14 +405,14 @@ export async function updateUser(req: any, res: any) {
       userAgent: getUserAgent(req),
     })
 
-    res.json({ 
-      id: user.id, 
-      email: user.email, 
-      name: user.name, 
-      address: user.address, 
-      role: user.role,
-      enabled: user.enabled
-    })
+  res.json({ 
+    id: user.id, 
+    email: user.email, 
+    name: user.name, 
+    address: user.address, 
+    role: user.role,
+    enabled: user.enabled
+  })
   } catch (error: any) {
     // Ghi log thất bại
     await logAudit({
@@ -452,7 +452,7 @@ export async function deleteUser(req: any, res: any) {
   }
 
   try {
-    const user = await Issuer.findById(id)
+  const user = await Issuer.findById(id)
     if (!user) {
       // Ghi log thất bại
       await logAudit({
@@ -470,8 +470,8 @@ export async function deleteUser(req: any, res: any) {
       return res.status(404).json({ message: "Không tìm thấy user" })
     }
 
-    // Không thể xóa chính mình
-    if (user.id === currentUserId) {
+  // Không thể xóa chính mình
+  if (user.id === currentUserId) {
       // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
@@ -485,12 +485,12 @@ export async function deleteUser(req: any, res: any) {
         ipAddress: getClientIp(req),
         userAgent: getUserAgent(req),
       })
-      return res.status(400).json({ message: "Không thể xóa chính mình" })
-    }
+    return res.status(400).json({ message: "Không thể xóa chính mình" })
+  }
 
-    // Admin không thể xóa admin hoặc super admin
-    if (currentUserRole === UserRole.ADMIN) {
-      if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
+  // Admin không thể xóa admin hoặc super admin
+  if (currentUserRole === UserRole.ADMIN) {
+    if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
         // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
@@ -504,13 +504,13 @@ export async function deleteUser(req: any, res: any) {
           ipAddress: getClientIp(req),
           userAgent: getUserAgent(req),
         })
-        return res.status(403).json({ message: "Admin không thể xóa admin hoặc super admin" })
-      }
+      return res.status(403).json({ message: "Admin không thể xóa admin hoặc super admin" })
     }
+  }
 
-    // Super admin chỉ có thể xóa admin, không thể xóa super admin khác
-    if (currentUserRole === UserRole.SUPER_ADMIN) {
-      if (user.role === UserRole.SUPER_ADMIN) {
+  // Super admin chỉ có thể xóa admin, không thể xóa super admin khác
+  if (currentUserRole === UserRole.SUPER_ADMIN) {
+    if (user.role === UserRole.SUPER_ADMIN) {
         // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
@@ -524,15 +524,15 @@ export async function deleteUser(req: any, res: any) {
           ipAddress: getClientIp(req),
           userAgent: getUserAgent(req),
         })
-        return res.status(403).json({ message: "Không thể xóa super admin" })
-      }
+      return res.status(403).json({ message: "Không thể xóa super admin" })
     }
+  }
 
     const deletedUserEmail = user.email
     const deletedUserRole = user.role
     const deletedUserName = user.name
 
-    await Issuer.findByIdAndDelete(id)
+  await Issuer.findByIdAndDelete(id)
 
     // Ghi log thành công
     await logAudit({
@@ -552,7 +552,7 @@ export async function deleteUser(req: any, res: any) {
       userAgent: getUserAgent(req),
     })
 
-    res.json({ ok: true, message: "Đã xóa user" })
+  res.json({ ok: true, message: "Đã xóa user" })
   } catch (error: any) {
     // Ghi log thất bại
     await logAudit({
