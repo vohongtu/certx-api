@@ -1,4 +1,5 @@
 import AuditLog, { AuditAction, AuditStatus } from '../models/audit-log.model'
+import Issuer from '../models/issuer.model'
 
 interface AuditLogData {
   userId: string
@@ -57,5 +58,28 @@ export function getClientIp(req: any): string {
  */
 export function getUserAgent(req: any): string {
   return req.headers['user-agent'] || 'unknown'
+}
+
+/**
+ * Helper để lấy thông tin user cho audit log
+ */
+export async function getUserInfoForAudit(userId: string, userRole?: string): Promise<{ email: string; role: 'USER' | 'ADMIN' | 'SUPER_ADMIN' }> {
+  try {
+    const issuer = await Issuer.findById(userId)
+    if (issuer && issuer.email) {
+      return {
+        email: issuer.email,
+        role: (issuer.role || userRole || 'USER') as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
+      }
+    }
+  } catch (error) {
+    // Fallback nếu không tìm thấy user
+  }
+  
+  // Fallback: dùng role từ token nếu có
+  return {
+    email: 'unknown',
+    role: (userRole || 'USER') as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
+  }
 }
 

@@ -88,14 +88,13 @@ async function detectAndValidateMimeType(
   try {
     detectedMime = await detectMime(fileBuffer)
   } catch (error) {
-    console.warn('Error detecting mimeType with file-type library:', error)
+    // Fallback to bytes detection
   }
   
   // Fallback: detect từ bytes nếu file-type không detect được
   if (!detectedMime || detectedMime === 'application/octet-stream') {
     const bytesDetected = detectMimeFromBytes(fileBuffer)
     if (bytesDetected) {
-      console.log(`Detected mimeType from bytes (${source}): ${bytesDetected} (file-type: ${detectedMime || 'unknown'}, stored: ${storedMimeType})`)
       detectedMime = bytesDetected
     }
   }
@@ -105,20 +104,9 @@ async function detectAndValidateMimeType(
     ? detectedMime 
     : (storedMimeType || 'application/pdf')
   
-  if (detectedMime && detectedMime !== 'application/octet-stream') {
-    console.log(`Using detected mimeType (${source}): ${detectedMime} (stored: ${storedMimeType})`)
-  } else {
-    console.warn(`Could not detect mimeType (${source}), using stored: ${finalMimeType}`)
-  }
-  
-  // Validate PDF nếu mimeType là PDF
-  if (finalMimeType === 'application/pdf' && !isPDF(fileBuffer)) {
-    console.warn('File được đánh dấu là PDF nhưng không phải PDF hợp lệ. First bytes:', fileBuffer.slice(0, 20).toString('hex'))
-  }
-  
   return finalMimeType
 }
-import { logAudit, getClientIp, getUserAgent } from "../services/audit.service"
+import { logAudit, getClientIp, getUserAgent, getUserInfoForAudit } from "../services/audit.service"
 import { AuditAction, AuditStatus } from "../models/audit-log.model"
 import Issuer from "../models/issuer.model"
 
@@ -262,6 +250,8 @@ export async function issue(req: any, res: any) {
     }
 
     // 5) Upload metadata (bản watermark) lên IPFS
+    // Convert Buffer thành base64 string để lưu vào JSON metadata
+    const fileBase64 = targetFile.toString('base64')
     const metadata = {
       holderName,
       degree,
@@ -283,7 +273,7 @@ export async function issue(req: any, res: any) {
       watermarkUsedCustomFont: usedCustomFont,
       issuerId,
       issuerEmail,
-      file: targetFile,
+      file: fileBase64, // File đã watermark (base64 string)
       isReIssue, // Đánh dấu đây là re-issue
       previousStatus: isReIssue ? 'REVOKED' : undefined,
     }
@@ -772,23 +762,6 @@ export async function uploadFile(req: any, res: any) {
 }
 
 // Helper function để lấy thông tin user cho audit log
-async function getUserInfoForAudit(userId: string, userRole?: string): Promise<{ email: string; role: 'USER' | 'ADMIN' | 'SUPER_ADMIN' }> {
-  let email = 'unknown'
-  let role: 'USER' | 'ADMIN' | 'SUPER_ADMIN' = userRole === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : userRole === 'ADMIN' ? 'ADMIN' : 'USER'
-  
-  try {
-    const issuer = await Issuer.findById(userId)
-    if (issuer) {
-      email = issuer.email ?? 'unknown'
-      role = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
-    }
-  } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
-  }
-  
-  return { email, role }
-}
-
 // Admin approve và cấp phát cert
 export async function approveCert(req: any, res: any) {
   const { id } = req.params
@@ -902,6 +875,8 @@ export async function approveCert(req: any, res: any) {
     const docHash = sha256Hex(watermarkedFile)
 
     // Tạo metadata từ thông tin trong DB và pendingMetadata, với file đã watermark
+    // Convert Buffer thành base64 string để lưu vào JSON metadata
+    const fileBase64 = watermarkedFile.toString('base64')
     const metadata = {
       holderName: cert.holderName,
       degree: cert.degree,
@@ -924,7 +899,7 @@ export async function approveCert(req: any, res: any) {
       watermarkMargin: watermarkMarginCfg,
       watermarkFontPath: watermarkFontPathCfg || undefined,
       watermarkUsedCustomFont: usedCustomFont,
-      file: watermarkedFile, // File đã watermark
+      file: fileBase64, // File đã watermark (base64 string)
       status: CertStatus.VALID,
       // Thêm thông tin reup nếu có
       ...(cert.pendingMetadata.reuploadNote && { reuploadNote: cert.pendingMetadata.reuploadNote }),
@@ -1526,9 +1501,6 @@ export async function previewCertFile(req: any, res: any) {
         
         mimeType = await detectAndValidateMimeType(fileBuffer, cert.pendingMetadata.mimeType ?? undefined, 'pendingMetadata')
       } catch (error: any) {
-        console.error('Error reading file from pendingMetadata:', error)
-        console.error('File data type:', typeof cert.pendingMetadata.file)
-        console.error('File data constructor:', (cert.pendingMetadata.file as any)?.constructor?.name)
         throw new Error(`Không thể đọc file từ pendingMetadata: ${error.message}`)
       }
     } 
@@ -1546,7 +1518,6 @@ export async function previewCertFile(req: any, res: any) {
         
         mimeType = await detectAndValidateMimeType(fileBuffer, metadata.mimeType, 'ipfs')
       } catch (error: any) {
-        console.error('Error fetching file from IPFS:', error)
         throw new Error(`Không thể lấy file từ IPFS: ${error.message}`)
       }
     }
@@ -1559,9 +1530,6 @@ export async function previewCertFile(req: any, res: any) {
     if (fileBuffer.length === 0) {
       return res.status(500).json({ message: 'File buffer rỗng' })
     }
-
-    // Log thông tin file để debug
-    console.log(`Preview file for cert ${id}: size=${fileBuffer.length}, mimeType=${mimeType}, isPDF=${isPDF(fileBuffer)}`)
 
     // Trả về file với Content-Type phù hợp
     res.setHeader('Content-Type', mimeType)
