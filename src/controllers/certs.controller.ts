@@ -5,6 +5,119 @@ import Cert, { CertStatus } from "../models/cert.model"
 import { config } from "../utils/env"
 import { uploadJSON } from "../services/ipfs.service"
 import { addWatermark, detectMime } from "../services/watermark.service"
+
+// Helper function để kiểm tra file có phải PDF hợp lệ không
+function isPDF(buf: Buffer): boolean {
+  if (!buf || buf.length < 4) return false
+  return buf.slice(0, 4).toString() === '%PDF'
+}
+
+// Helper function để detect mimeType từ first bytes (fallback khi file-type không detect được)
+function detectMimeFromBytes(buf: Buffer): string | null {
+  if (!buf || buf.length < 4) return null
+  
+  const firstBytes = buf.slice(0, 20).toString('utf8', 0, Math.min(20, buf.length))
+  const firstBytesHex = buf.slice(0, 8).toString('hex').toLowerCase()
+  
+  // PDF
+  if (buf.slice(0, 4).toString() === '%PDF') return 'application/pdf'
+  
+  // SVG/XML
+  if (firstBytes.trim().startsWith('<svg') || firstBytesHex.startsWith('3c737667')) {
+    return 'image/svg+xml'
+  }
+  if (firstBytes.trim().startsWith('<?xml')) return 'application/xml'
+  
+  // Image formats
+  if (firstBytesHex.startsWith('89504e47')) return 'image/png'
+  if (firstBytesHex.startsWith('ffd8ff')) return 'image/jpeg'
+  if (firstBytesHex.startsWith('474946')) return 'image/gif'
+  if (firstBytesHex.startsWith('52494646') && buf.length > 12 && buf.slice(8, 12).toString() === 'WEBP') {
+    return 'image/webp'
+  }
+  
+  return null
+}
+
+// Helper function để convert file data thành Buffer (xử lý nhiều format)
+function convertToBuffer(fileData: any): Buffer {
+  if (Buffer.isBuffer(fileData)) return fileData
+  if (fileData instanceof Uint8Array) return Buffer.from(fileData)
+  if (Array.isArray(fileData)) return Buffer.from(fileData)
+  if (typeof fileData === 'string') return Buffer.from(fileData, 'base64')
+  
+  const data = fileData as any
+  // MongoDB Binary type
+  if (typeof data.buffer === 'function') return Buffer.from(data.buffer())
+  if (typeof data.value === 'function') return Buffer.from(data.value())
+  if (Buffer.isBuffer(data.buffer)) return data.buffer
+  if (Buffer.isBuffer(data.value)) return data.value
+  
+  // Serialized Buffer
+  if (data.type === 'Buffer' && Array.isArray(data.data)) return Buffer.from(data.data)
+  if (Array.isArray(data.data)) return Buffer.from(data.data)
+  if (data.data) {
+    if (Buffer.isBuffer(data.data)) return data.data
+    if (Array.isArray(data.data)) return Buffer.from(data.data)
+    if (data.data instanceof Uint8Array) return Buffer.from(data.data)
+    return Buffer.from(data.data)
+  }
+  
+  // Tìm trong các property khác
+  const keys = ['data', 'buffer', 'value', 'content', 'bytes']
+  for (const key of keys) {
+    if (data[key]) {
+      if (Buffer.isBuffer(data[key])) return data[key]
+      if (Array.isArray(data[key])) return Buffer.from(data[key])
+      if (data[key] instanceof Uint8Array) return Buffer.from(data[key])
+    }
+  }
+  
+  throw new Error(`Không thể convert file data thành Buffer. Type: ${typeof fileData}`)
+}
+
+// Helper function để detect và validate mimeType
+async function detectAndValidateMimeType(
+  fileBuffer: Buffer,
+  storedMimeType?: string,
+  source: 'pendingMetadata' | 'ipfs' = 'pendingMetadata'
+): Promise<string> {
+  let detectedMime: string | null = null
+  
+  // Thử detect bằng file-type library
+  try {
+    detectedMime = await detectMime(fileBuffer)
+  } catch (error) {
+    console.warn('Error detecting mimeType with file-type library:', error)
+  }
+  
+  // Fallback: detect từ bytes nếu file-type không detect được
+  if (!detectedMime || detectedMime === 'application/octet-stream') {
+    const bytesDetected = detectMimeFromBytes(fileBuffer)
+    if (bytesDetected) {
+      console.log(`Detected mimeType from bytes (${source}): ${bytesDetected} (file-type: ${detectedMime || 'unknown'}, stored: ${storedMimeType})`)
+      detectedMime = bytesDetected
+    }
+  }
+  
+  // Sử dụng mimeType đã detect hoặc fallback về stored
+  const finalMimeType = (detectedMime && detectedMime !== 'application/octet-stream') 
+    ? detectedMime 
+    : (storedMimeType || 'application/pdf')
+  
+  if (detectedMime && detectedMime !== 'application/octet-stream') {
+    console.log(`Using detected mimeType (${source}): ${detectedMime} (stored: ${storedMimeType})`)
+  } else {
+    console.warn(`Could not detect mimeType (${source}), using stored: ${finalMimeType}`)
+  }
+  
+  // Validate PDF nếu mimeType là PDF
+  if (finalMimeType === 'application/pdf' && !isPDF(fileBuffer)) {
+    console.warn('File được đánh dấu là PDF nhưng không phải PDF hợp lệ. First bytes:', fileBuffer.slice(0, 20).toString('hex'))
+  }
+  
+  return finalMimeType
+}
 import { logAudit, getClientIp, getUserAgent } from "../services/audit.service"
 import { AuditAction, AuditStatus } from "../models/audit-log.model"
 import Issuer from "../models/issuer.model"
@@ -666,7 +779,7 @@ async function getUserInfoForAudit(userId: string, userRole?: string): Promise<{
   try {
     const issuer = await Issuer.findById(userId)
     if (issuer) {
-      email = issuer.email
+      email = issuer.email ?? 'unknown'
       role = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
@@ -1228,9 +1341,13 @@ export async function reuploadCert(req: any, res: any) {
   const { note, useOriginalFile, holderName, degree, credentialTypeId } = req.body
   const file: Buffer = req.file?.buffer
   const userId = req.user?.sub
+  const userRole = req.user?.role
 
   if (!userId) return res.status(401).json({ message: 'Thiếu thông tin user' })
   if (!note || !note.trim()) return res.status(400).json({ message: "Vui lòng nhập ghi chú trước khi reup" })
+
+  // Lấy thông tin user để ghi audit log
+  const { email: userEmail, role: userRoleForAudit } = await getUserInfoForAudit(userId, userRole)
 
   try {
     const originalCert = await Cert.findById(id)
@@ -1322,55 +1439,115 @@ export async function reuploadCert(req: any, res: any) {
     originalCert.allowReupload = false
     await originalCert.save()
 
+    // Ghi log thành công
+    await logAudit({
+      userId,
+      userEmail,
+      userRole: userRoleForAudit,
+      action: AuditAction.CERT_REUPLOAD,
+      status: AuditStatus.SUCCESS,
+      resourceType: 'cert',
+      resourceId: cert.id,
+      details: {
+        holderName,
+        degree,
+        credentialTypeId: credentialTypeId || undefined,
+        originalHash: cert.originalHash,
+        reuploadedFrom: originalCert.id,
+        reuploadNote: note.trim(),
+        useOriginalFile: useOriginalFile === 'true' || useOriginalFile === true,
+      },
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+
     res.json({ 
       id: cert.id, docHash: cert.docHash, status: CertStatus.PENDING,
       message: "File đã được reup thành công. Vui lòng chờ admin duyệt."
     })
   } catch (error: any) {
     console.error("Reupload error:", error)
+    
+    // Ghi log thất bại
+    await logAudit({
+      userId,
+      userEmail,
+      userRole: userRoleForAudit,
+      action: AuditAction.CERT_REUPLOAD,
+      status: AuditStatus.FAILURE,
+      resourceType: 'cert',
+      resourceId: id,
+      errorMessage: error.message || "Có lỗi xảy ra khi reup file",
+      ipAddress: getClientIp(req),
+      userAgent: getUserAgent(req),
+    })
+    
     res.status(500).json({ message: error.message || "Có lỗi xảy ra khi reup file" })
   }
 }
 
-// Admin xem trước file (từ pendingMetadata hoặc IPFS)
+// User/Admin xem trước file (từ pendingMetadata hoặc IPFS)
 export async function previewCertFile(req: any, res: any) {
   const { id } = req.params
+  const userId = req.user?.sub
+  const userRole = req.user?.role
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
+
+  if (!userId) return res.status(401).json({ message: 'Thiếu thông tin user' })
 
   try {
+    // Query document không dùng lean() để đảm bảo có đầy đủ Binary type
     const cert = await Cert.findById(id)
     if (!cert) return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
+
+    // Kiểm tra quyền: user chỉ có thể xem file của chính họ, admin có thể xem tất cả
+    if (!isAdmin && cert.issuerId !== userId) {
+      return res.status(403).json({ message: 'Bạn không có quyền xem file này' })
+    }
 
     let fileBuffer: Buffer | null = null
     let mimeType: string = 'application/pdf'
 
     // Nếu có pendingMetadata (chưa approve), lấy file từ MongoDB
     if (cert.pendingMetadata && cert.pendingMetadata.file) {
-      fileBuffer = cert.pendingMetadata.file
-      mimeType = cert.pendingMetadata.mimeType || 'application/pdf'
+      try {
+        // Lấy file data từ Mongoose document
+        let fileData: any = cert.pendingMetadata.file
+        const doc = cert as any
+        
+        if (!fileData || (!Buffer.isBuffer(fileData) && typeof fileData !== 'object')) {
+          fileData = doc.get?.('pendingMetadata.file') || doc.toObject?.()?.pendingMetadata?.file || doc._doc?.pendingMetadata?.file
+        }
+        
+        if (!fileData) throw new Error('Không thể lấy file data từ document')
+        
+        fileBuffer = convertToBuffer(fileData)
+        if (!fileBuffer || fileBuffer.length === 0) throw new Error('File buffer rỗng sau khi convert')
+        
+        mimeType = await detectAndValidateMimeType(fileBuffer, cert.pendingMetadata.mimeType ?? undefined, 'pendingMetadata')
+      } catch (error: any) {
+        console.error('Error reading file from pendingMetadata:', error)
+        console.error('File data type:', typeof cert.pendingMetadata.file)
+        console.error('File data constructor:', (cert.pendingMetadata.file as any)?.constructor?.name)
+        throw new Error(`Không thể đọc file từ pendingMetadata: ${error.message}`)
+      }
     } 
     // Nếu đã approve, lấy từ IPFS
     else if (cert.metadataUri) {
       try {
         const response = await fetch(cert.metadataUri)
-        if (response.ok) {
-          const metadata = await response.json()
-          const filePayload = metadata.file
-          
-          if (filePayload) {
-            // Convert file từ metadata về Buffer
-            if (filePayload.type === 'Buffer' && Array.isArray(filePayload.data)) {
-              fileBuffer = Buffer.from(filePayload.data)
-            } else if (Array.isArray(filePayload)) {
-              fileBuffer = Buffer.from(filePayload)
-            } else if (typeof filePayload === 'string') {
-              // Nếu là base64 string
-              fileBuffer = Buffer.from(filePayload, 'base64')
-            }
-            mimeType = metadata.mimeType || 'application/pdf'
-          }
-        }
-      } catch (error) {
+        if (!response.ok) throw new Error(`IPFS fetch failed: ${response.status}`)
+        
+        const metadata = await response.json()
+        if (!metadata.file) throw new Error('Không tìm thấy file trong metadata')
+        
+        fileBuffer = convertToBuffer(metadata.file)
+        if (!fileBuffer || fileBuffer.length === 0) throw new Error('File buffer rỗng sau khi convert từ IPFS')
+        
+        mimeType = await detectAndValidateMimeType(fileBuffer, metadata.mimeType, 'ipfs')
+      } catch (error: any) {
         console.error('Error fetching file from IPFS:', error)
+        throw new Error(`Không thể lấy file từ IPFS: ${error.message}`)
       }
     }
 
@@ -1378,9 +1555,18 @@ export async function previewCertFile(req: any, res: any) {
       return res.status(404).json({ message: 'Không tìm thấy file để xem trước' })
     }
 
+    // Validate file buffer trước khi trả về
+    if (fileBuffer.length === 0) {
+      return res.status(500).json({ message: 'File buffer rỗng' })
+    }
+
+    // Log thông tin file để debug
+    console.log(`Preview file for cert ${id}: size=${fileBuffer.length}, mimeType=${mimeType}, isPDF=${isPDF(fileBuffer)}`)
+
     // Trả về file với Content-Type phù hợp
     res.setHeader('Content-Type', mimeType)
-    res.setHeader('Content-Disposition', `inline; filename="cert-${cert.id}.${mimeType === 'application/pdf' ? 'pdf' : 'jpg'}"`)
+    res.setHeader('Content-Disposition', `inline; filename="cert-${cert.id}.${mimeType === 'application/pdf' ? 'pdf' : mimeType.startsWith('image/') ? 'jpg' : 'bin'}"`)
+    res.setHeader('Content-Length', fileBuffer.length.toString())
     res.send(fileBuffer)
   } catch (error: any) {
     console.error("Preview error:", error)

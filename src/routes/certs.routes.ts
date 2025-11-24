@@ -58,7 +58,7 @@ r.post('/certs/revoke', requireAuth, revoke) // User có thể revoke cert của
 
 // Admin routes (requireAdmin)
 r.get('/certs/pending', requireAdmin, listPendingCerts) // Admin xem danh sách certs chờ duyệt
-r.get('/certs/:id/preview', requireAdmin, previewCertFile) // Admin xem trước file
+r.get('/certs/:id/preview', requireAuth, previewCertFile) // User/Admin xem trước file (user chỉ xem được file của mình)
 r.post('/certs/:id/approve', requireAdmin, approveCert) // Admin approve cert
 r.post('/certs/:id/reject', requireAdmin, rejectCert) // Admin reject cert
 r.put('/certs/:id/expiration', requireAdmin, updateExpirationDate) // Admin chỉnh sửa thời gian tồn tại
