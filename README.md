@@ -11,6 +11,7 @@ Backend Node.js + Express + TypeScript + Mongoose cho hệ thống quản lý v�
 - **QR Code Generation**: Tạo QR code cho liên kết xác thực
 - **File Upload**: Hỗ trợ upload file PDF, JPG, PNG
 - **IPFS Integration**: (Tùy chọn) Lưu trữ metadata trên IPFS
+- **Watermark**: Chèn watermark vào chứng chỉ trước khi phát hành
 
 ## 📁 Cấu trúc dự án
 
@@ -29,7 +30,8 @@ certx-api/
 │  │  ├─ blockchain.service.ts # Ethers: issue/revoke/get
 │  │  ├─ ipfs.service.ts       # (Tùy chọn) Upload JSON → IPFS
 │  │  ├─ hash.service.ts       # Chuẩn hoá file, SHA-256
-│  │  └─ qrcode.service.ts     # Tạo PNG QR (data URL)
+│  │  ├─ qrcode.service.ts     # Tạo PNG QR (data URL)
+│  │  └─ watermark.service.ts  # Chèn watermark vào PDF/ảnh
 │  ├─ models/
 │  │  ├─ issuer.model.ts       # Tài khoản issuer
 │  │  └─ cert.model.ts         # Log off-chain (hash, metadataUri, status)
@@ -64,6 +66,9 @@ certx-api/
 - **Multer** - File upload
 - **QRCode** - QR code generation
 - **bcryptjs** - Password hashing
+- **sharp** - Image processing & watermarking
+- **pdf-lib** - PDF watermarking
+- **file-type** - File type detection
 
 ## 📋 Yêu cầu hệ thống
 
@@ -99,6 +104,15 @@ PRIVATE_KEY=0xYourIssuerPrivateKey
 
 IPFS_TOKEN=
 PUBLIC_VERIFY_BASE=http://localhost:5173/verify
+
+# Watermark configuration (optional)
+WATERMARK_ENABLED=true
+WATERMARK_TEXT=Issued by CertX • Do not alter
+WATERMARK_OPACITY=0.2
+WATERMARK_COLOR=#bfbfbf
+WATERMARK_REPEAT=3
+WATERMARK_MARGIN=0.12
+WATERMARK_FONT_PATH=./fonts/NotoSans-Regular.ttf
 ```
 
 ### 3. Chạy development server
@@ -128,7 +142,8 @@ npm start
 
 ### Certificates
 - `POST /certs/issue` - Cấp phát chứng chỉ (cần auth)
-- `POST /certs/revoke` - Thu hồi chứng chỉ (cần auth)
+- `GET /certs` - Danh sách chứng chỉ do issuer hiện tại phát hành
+- `POST /certs/revoke` - Thu hồi chứng chỉ (cần auth, kiểm tra issuer)
 - `GET /verify?hash=...` - Xác thực chứng chỉ
 - `GET /qrcode?hash=...` - Tạo QR code PNG
 
@@ -200,6 +215,93 @@ npm start
 - CORS enabled
 - Environment variables validation
 
+## 💧 Watermark Feature
+
+### Tổng quan
+Hệ thống hỗ trợ chèn watermark vào chứng chỉ (PDF, JPG, PNG) trước khi phát hành. Watermark giúp:
+- Bảo vệ bản quyền
+- Chống chỉnh sửa (visual deterrence)
+- Xác thực nguồn gốc
+
+### Cấu hình
+Các biến môi trường trong `.env`:
+
+```env
+WATERMARK_ENABLED=true              # Bật/tắt watermark
+WATERMARK_TEXT=Issued by CertX      # Text watermark
+WATERMARK_OPACITY=0.2               # Độ mờ (0-1)
+WATERMARK_COLOR=#bfbfbf             # Màu chữ watermark
+WATERMARK_REPEAT=3                  # Số dòng watermark mỗi trang (1-6)
+WATERMARK_MARGIN=0.12               # Biên trên/dưới (0-0.45)
+```
+- `WATERMARK_REPEAT`: số lần lặp watermark trên mỗi trang (ví dụ 3 cho cân bằng, tăng/giảm để chỉnh khoảng cách).
+- `WATERMARK_MARGIN`: tỉ lệ khoảng cách đỉnh/cuối trang (0-0.45). Mặc định 0.12 giúp watermark bắt đầu gần mép trên.
+- `WATERMARK_FONT_PATH`: (tùy chọn) đường dẫn tới file .ttf hỗ trợ Unicode để giữ nguyên dấu tiếng Việt trong watermark.
+
+
+### Cách hoạt động
+
+#### 1. PDF Watermark
+- Chèn text dạng chéo qua mỗi trang
+- Font: Helvetica, màu xám, độ mờ 0.15
+- Kích thước font tỉ lệ với trang
+
+#### 2. Image Watermark (JPG/PNG)
+- Sử dụng SVG overlay với sharp
+- Text xoay 30 độ ở giữa ảnh
+- Độ mờ có thể điều chỉnh
+
+#### 3. Luồng xử lý
+```
+1. Upload file gốc
+2. Chèn watermark (nếu bật)
+3. Tính SHA-256 từ bản ĐÃ watermark
+4. Upload metadata lên IPFS
+5. Ghi hash lên blockchain
+6. Lưu vào MongoDB
+```
+
+**Lưu ý**: Hash được tính từ bản ĐÃ watermark (phiên bản phát hành). Bản gốc không được lưu.
+
+### Kiểm thử
+
+```bash
+# Test với ảnh
+curl -X POST http://localhost:8080/certs/issue \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@cert.jpg" \
+  -F "holderName=Nguyen Van A" \
+  -F "degree=BSc" \
+  -F "issuedDate=2024-01-15"
+
+# Test với PDF
+curl -X POST http://localhost:8080/certs/issue \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@cert.pdf" \
+  -F "holderName=Nguyen Van A" \
+  -F "degree=BSc" \
+  -F "issuedDate=2024-01-15"
+```
+
+Watermark text sẽ tự động bao gồm: `WATERMARK_TEXT • holderName • issuedDate`
+
 ## 📄 License
 
 MIT License
+
+## 🌱 Seed dữ liệu
+
+Tạo nhanh một issuer mẫu:
+
+```bash
+pnpm run seed
+```
+
+Có thể ghi đè thông tin qua env:
+
+```env
+SEED_ISSUER_EMAIL=issuer@certx.local
+SEED_ISSUER_PASSWORD=Certx123!
+SEED_ISSUER_NAME=CertX Academy
+SEED_ISSUER_ADDRESS=0xSeedIssuerAddress...
+```

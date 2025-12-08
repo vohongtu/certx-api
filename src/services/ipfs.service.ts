@@ -15,12 +15,9 @@ export async function uploadJSON(obj: any) {
   try {
     const base64Data = encodeBase64(obj)
     const upload = await pinata.upload.public.base64(base64Data)
-
-    console.log("Uploaded to IPFS:", upload)
-
     return `https://${config.IPFS_GATEWAY}/ipfs/${upload.cid}`
   } catch (error) {
-    console.error("Upload failed:", error)
+    console.error("IPFS upload failed:", error)
     throw error
   }
 }
