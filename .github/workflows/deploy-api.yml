@@ -72,16 +72,22 @@ jobs:
 
   deploy:
     needs: docker
-    if: ${{ secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.SSH_KEY != '' && secrets.REMOTE_ENV_FILE != '' }}
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST || '' }}
+      SSH_USER: ${{ secrets.SSH_USER || '' }}
+      SSH_KEY: ${{ secrets.SSH_KEY || '' }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      REMOTE_ENV_FILE: ${{ secrets.REMOTE_ENV_FILE || '' }}
+    if: ${{ env.SSH_HOST != '' && env.SSH_USER != '' && env.SSH_KEY != '' && env.REMOTE_ENV_FILE != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy qua SSH (tùy chọn)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || '22' }}
+          host: ${{ env.SSH_HOST }}
+          username: ${{ env.SSH_USER }}
+          key: ${{ env.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
           script: |
             IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-api:latest
             docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
@@ -89,6 +95,6 @@ jobs:
             docker stop certx-api || true
             docker rm certx-api || true
             docker run -d --name certx-api -p 8080:8080 \
-              --env-file "${{ secrets.REMOTE_ENV_FILE }}" \
+              --env-file "${{ env.REMOTE_ENV_FILE }}" \
               $IMAGE
 
