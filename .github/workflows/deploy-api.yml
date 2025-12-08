@@ -97,4 +97,3 @@ jobs:
             docker run -d --name certx-api -p 8080:8080 \
               --env-file "${{ env.REMOTE_ENV_FILE }}" \
               $IMAGE
-
