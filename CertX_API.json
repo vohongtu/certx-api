@@ -1,0 +1,1216 @@
+{
+	"info": {
+		"_postman_id": "certx-api-collection",
+		"name": "CertX API Collection",
+		"description": "Collection đầy đủ các API endpoints của CertX với các param mẫu",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/health",
+							"host": ["{{baseUrl}}"],
+							"path": ["health"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"name\": \"Nguyễn Văn A\",\n  \"address\": \"0x1234567890123456789012345678901234567890\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/auth/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["auth", "register"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Certificates",
+			"item": [
+				{
+					"name": "Public",
+					"item": [
+						{
+							"name": "Verify Certificate",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/verify?hash=abc123def456",
+									"host": ["{{baseUrl}}"],
+									"path": ["verify"],
+									"query": [
+										{
+											"key": "hash",
+											"value": "abc123def456",
+											"description": "docHash của certificate"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Get QR Code",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{baseUrl}}/qrcode?hash=abc123def456",
+									"host": ["{{baseUrl}}"],
+									"path": ["qrcode"],
+									"query": [
+										{
+											"key": "hash",
+											"value": "abc123def456",
+											"description": "docHash của certificate"
+										}
+									]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "User Routes",
+					"item": [
+						{
+							"name": "Upload File",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "file",
+											"type": "file",
+											"src": [],
+											"description": "File PDF hoặc hình ảnh (tối đa 5MB)"
+										},
+										{
+											"key": "holderName",
+											"value": "Nguyễn Văn A",
+											"type": "text",
+											"description": "Tên người nhận chứng chỉ"
+										},
+										{
+											"key": "degree",
+											"value": "Cử nhân Công nghệ Thông tin",
+											"type": "text",
+											"description": "Bằng cấp"
+										},
+										{
+											"key": "credentialTypeId",
+											"value": "degree",
+											"type": "text",
+											"description": "ID loại văn bằng (optional)"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/upload",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", "upload"]
+								}
+							}
+						},
+						{
+							"name": "Reupload Certificate",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "file",
+											"type": "file",
+											"src": [],
+											"description": "File mới hoặc để trống nếu dùng file cũ"
+										},
+										{
+											"key": "note",
+											"value": "Đã sửa lại thông tin",
+											"type": "text",
+											"description": "Ghi chú khi reup (bắt buộc)"
+										},
+										{
+											"key": "useOriginalFile",
+											"value": "false",
+											"type": "text",
+											"description": "true nếu dùng file cũ, false nếu upload file mới"
+										},
+										{
+											"key": "holderName",
+											"value": "Nguyễn Văn A",
+											"type": "text",
+											"description": "Tên người nhận chứng chỉ"
+										},
+										{
+											"key": "degree",
+											"value": "Cử nhân Công nghệ Thông tin",
+											"type": "text",
+											"description": "Bằng cấp"
+										},
+										{
+											"key": "credentialTypeId",
+											"value": "degree",
+											"type": "text",
+											"description": "ID loại văn bằng (optional)"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/reupload",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "reupload"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "List My Certificates",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/certs?page=1&limit=10&q=&status=ALL",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs"],
+									"query": [
+										{
+											"key": "page",
+											"value": "1",
+											"description": "Số trang (mặc định: 1)"
+										},
+										{
+											"key": "limit",
+											"value": "10",
+											"description": "Số lượng mỗi trang (1-20, mặc định: 5)"
+										},
+										{
+											"key": "q",
+											"value": "",
+											"description": "Từ khóa tìm kiếm (holderName, degree, docHash)"
+										},
+										{
+											"key": "status",
+											"value": "ALL",
+											"description": "Lọc theo status: ALL, PENDING, APPROVED, REJECTED, VALID, REVOKED, EXPIRED"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Revoke Certificate",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"hash\": \"abc123def456\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/revoke",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", "revoke"]
+								}
+							}
+						},
+						{
+							"name": "Preview Certificate File",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/preview",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "preview"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Admin Routes",
+					"item": [
+						{
+							"name": "List Pending Certificates",
+							"request": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{adminToken}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/certs/pending?page=1&limit=10&q=&status=PENDING",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", "pending"],
+									"query": [
+										{
+											"key": "page",
+											"value": "1",
+											"description": "Số trang (mặc định: 1)"
+										},
+										{
+											"key": "limit",
+											"value": "10",
+											"description": "Số lượng mỗi trang (1-50, mặc định: 10)"
+										},
+										{
+											"key": "q",
+											"value": "",
+											"description": "Từ khóa tìm kiếm (holderName, degree, docHash, issuerEmail)"
+										},
+										{
+											"key": "status",
+											"value": "PENDING",
+											"description": "Lọc theo status: ALL, PENDING, APPROVED, REJECTED, VALID, REVOKED, EXPIRED"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Approve Certificate",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{adminToken}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"issuedDate\": \"2024-01-15\",\n  \"expirationDate\": \"2027-01-15\",\n  \"validityOptionId\": \"degree_3years\",\n  \"expirationMonths\": null,\n  \"expirationYears\": null\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/approve",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "approve"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Reject Certificate",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{adminToken}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"rejectionReason\": \"Thông tin không chính xác\",\n  \"allowReupload\": true\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/reject",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "reject"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Update Expiration Date",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{adminToken}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"issuedDate\": \"2024-01-15\",\n  \"expirationDate\": \"2027-01-15\",\n  \"validityOptionId\": \"degree_3years\",\n  \"expirationMonths\": 36,\n  \"expirationYears\": null\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/expiration",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "expiration"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Revoke Certificate by Admin",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{adminToken}}"
+									}
+								],
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/revoke",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "revoke"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Transfer Certificate (Super Admin)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{superAdminToken}}"
+									},
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"newUserId\": \"user_id_here\",\n  \"note\": \"Chuyển chứng chỉ cho người nhận mới\",\n  \"holderName\": \"Trần Thị B\"\n}"
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/:id/transfer",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", ":id", "transfer"],
+									"variable": [
+										{
+											"key": "id",
+											"value": "certificate_id_here"
+										}
+									]
+								}
+							}
+						},
+						{
+							"name": "Issue Certificate (Legacy)",
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "Bearer {{token}}"
+									}
+								],
+								"body": {
+									"mode": "formdata",
+									"formdata": [
+										{
+											"key": "file",
+											"type": "file",
+											"src": [],
+											"description": "File PDF hoặc hình ảnh"
+										},
+										{
+											"key": "holderName",
+											"value": "Nguyễn Văn A",
+											"type": "text"
+										},
+										{
+											"key": "degree",
+											"value": "Cử nhân Công nghệ Thông tin",
+											"type": "text"
+										},
+										{
+											"key": "issuedDate",
+											"value": "2024-01-15",
+											"type": "text"
+										},
+										{
+											"key": "expirationDate",
+											"value": "2027-01-15",
+											"type": "text",
+											"description": "Optional"
+										},
+										{
+											"key": "userId",
+											"value": "",
+											"type": "text",
+											"description": "Optional - ID người nhận nếu admin cấp cho user"
+										}
+									]
+								},
+								"url": {
+									"raw": "{{baseUrl}}/certs/issue",
+									"host": ["{{baseUrl}}"],
+									"path": ["certs", "issue"]
+								}
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Users Management",
+			"item": [
+				{
+					"name": "List Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users?page=1&limit=10&q=&role=USER",
+							"host": ["{{baseUrl}}"],
+							"path": ["users"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Số trang (mặc định: 1)"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Số lượng mỗi trang (1-50, mặc định: 10)"
+								},
+								{
+									"key": "q",
+									"value": "",
+									"description": "Từ khóa tìm kiếm (name, email, address)"
+								},
+								{
+									"key": "role",
+									"value": "USER",
+									"description": "Lọc theo role: USER, ADMIN, SUPER_ADMIN"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newuser@example.com\",\n  \"password\": \"password123\",\n  \"name\": \"Nguyễn Văn A\",\n  \"address\": \"0x1234567890123456789012345678901234567890\",\n  \"role\": \"USER\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users",
+							"host": ["{{baseUrl}}"],
+							"path": ["users"]
+						}
+					}
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Nguyễn Văn B\",\n  \"email\": \"updated@example.com\",\n  \"address\": \"0x1234567890123456789012345678901234567890\",\n  \"enabled\": true,\n  \"role\": \"USER\",\n  \"password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/users/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user_id_here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete User",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/users/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["users", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "user_id_here"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Credential Types",
+			"item": [
+				{
+					"name": "List Credential Types",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/credential-types?page=1&limit=10&q=",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-types"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Số trang (mặc định: 1)"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Số lượng mỗi trang (mặc định: 10)"
+								},
+								{
+									"key": "q",
+									"value": "",
+									"description": "Từ khóa tìm kiếm (name, id)"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Credential Type by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/credential-types/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-types", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "degree"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Credential Type",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"diploma\",\n  \"name\": \"Bằng tốt nghiệp\",\n  \"isPermanent\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/credential-types",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-types"]
+						}
+					}
+				},
+				{
+					"name": "Update Credential Type",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Bằng tốt nghiệp (Cập nhật)\",\n  \"isPermanent\": false\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/credential-types/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-types", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "diploma"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Credential Type",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/credential-types/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-types", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "diploma"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Credential Validity Options",
+			"item": [
+				{
+					"name": "List Validity Options",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/credential-validity-options?credentialTypeId=degree",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-validity-options"],
+							"query": [
+								{
+									"key": "credentialTypeId",
+									"value": "degree",
+									"description": "Lọc theo credentialTypeId (optional)"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Validity Option by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/credential-validity-options/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-validity-options", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "degree_3years"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Validity Option",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id\": \"degree_3years\",\n  \"credentialTypeId\": \"degree\",\n  \"periodMonths\": 36,\n  \"periodDays\": null,\n  \"note\": \"3 năm\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/credential-validity-options",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-validity-options"]
+						}
+					}
+				},
+				{
+					"name": "Update Validity Option",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"credentialTypeId\": \"degree\",\n  \"periodMonths\": 48,\n  \"periodDays\": null,\n  \"note\": \"4 năm\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/credential-validity-options/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-validity-options", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "degree_3years"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Validity Option",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{adminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/credential-validity-options/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["credential-validity-options", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "degree_3years"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Blockchain/Contract",
+			"item": [
+				{
+					"name": "Get Certificate from Blockchain",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/certificate?hash=abc123def456",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "certificate"],
+							"query": [
+								{
+									"key": "hash",
+									"value": "abc123def456",
+									"description": "docHash của certificate (bytes32)"
+								}
+							]
+						},
+						"description": "Lấy thông tin certificate trực tiếp từ blockchain (không qua DB). Trả về: issuer, metadataURI, status (0=None, 1=Valid, 2=Revoked), issuedAt"
+					}
+				},
+				{
+					"name": "Check Issuer Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/issuer?address=0x1234567890123456789012345678901234567890",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "issuer"],
+							"query": [
+								{
+									"key": "address",
+									"value": "0x1234567890123456789012345678901234567890",
+									"description": "Ethereum address cần kiểm tra"
+								}
+							]
+						},
+						"description": "Kiểm tra xem một address có phải là issuer được phép không (isIssuer mapping)"
+					}
+				},
+				{
+					"name": "Get Contract Owner",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/owner",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "owner"]
+						},
+						"description": "Lấy địa chỉ owner của contract (chỉ owner mới có thể setIssuer và setOwner)"
+					}
+				},
+				{
+					"name": "Set Issuer (Owner Only)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{superAdminToken}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"address\": \"0x1234567890123456789012345678901234567890\",\n  \"allowed\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/contract/issuer",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "issuer"]
+						},
+						"description": "Thêm/xóa issuer vào whitelist (chỉ owner mới có quyền). Được gọi tự động khi register user có address và role ADMIN/SUPER_ADMIN"
+					}
+				},
+				{
+					"name": "Get Contract Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/info",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "info"]
+						},
+						"description": "Lấy thông tin contract: address, chainId, owner, total certificates, etc."
+					}
+				},
+				{
+					"name": "Verify Certificate on Chain Only",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/verify?hash=abc123def456",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "verify"],
+							"query": [
+								{
+									"key": "hash",
+									"value": "abc123def456",
+									"description": "docHash của certificate"
+								}
+							]
+						},
+						"description": "Xác thực certificate chỉ từ blockchain (không check DB). Trả về status: NOT_FOUND (0), VALID (1), REVOKED (2)"
+					}
+				},
+				{
+					"name": "Get Certificate Record (Raw)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/contract/record?hash=abc123def456",
+							"host": ["{{baseUrl}}"],
+							"path": ["contract", "record"],
+							"query": [
+								{
+									"key": "hash",
+									"value": "abc123def456",
+									"description": "docHash của certificate"
+								}
+							]
+						},
+						"description": "Lấy raw record từ blockchain mapping records[hash]. Trả về đầy đủ struct Record: issuer, metadataURI, status, issuedAt"
+					}
+				}
+			]
+		},
+		{
+			"name": "Audit Logs",
+			"item": [
+				{
+					"name": "List Audit Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{superAdminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/audit/logs?page=1&limit=20&userId=&userRole=&action=&status=&resourceType=&resourceId=&startDate=&endDate=&search=",
+							"host": ["{{baseUrl}}"],
+							"path": ["audit", "logs"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Số trang (mặc định: 1)"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Số lượng mỗi trang (1-100, mặc định: 20)"
+								},
+								{
+									"key": "userId",
+									"value": "",
+									"description": "Lọc theo userId"
+								},
+								{
+									"key": "userRole",
+									"value": "",
+									"description": "Lọc theo role: USER, ADMIN, SUPER_ADMIN"
+								},
+								{
+									"key": "action",
+									"value": "",
+									"description": "Lọc theo action (LOGIN, REGISTER, CERT_ISSUE, etc.)"
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Lọc theo status: SUCCESS, FAILURE"
+								},
+								{
+									"key": "resourceType",
+									"value": "",
+									"description": "Lọc theo resourceType (cert, user, etc.)"
+								},
+								{
+									"key": "resourceId",
+									"value": "",
+									"description": "Lọc theo resourceId"
+								},
+								{
+									"key": "startDate",
+									"value": "",
+									"description": "Ngày bắt đầu (YYYY-MM-DD)"
+								},
+								{
+									"key": "endDate",
+									"value": "",
+									"description": "Ngày kết thúc (YYYY-MM-DD)"
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "Tìm kiếm (userEmail, resourceId, errorMessage)"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Audit Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{superAdminToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/audit/stats?startDate=2024-01-01&endDate=2024-12-31",
+							"host": ["{{baseUrl}}"],
+							"path": ["audit", "stats"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"description": "Ngày bắt đầu (YYYY-MM-DD, mặc định: 30 ngày trước)"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"description": "Ngày kết thúc (YYYY-MM-DD, mặc định: hôm nay)"
+								}
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string",
+			"description": "JWT token từ login (User token)"
+		},
+		{
+			"key": "adminToken",
+			"value": "",
+			"type": "string",
+			"description": "JWT token từ login (Admin token)"
+		},
+		{
+			"key": "superAdminToken",
+			"value": "",
+			"type": "string",
+			"description": "JWT token từ login (Super Admin token)"
+		}
+	]
+}
+
