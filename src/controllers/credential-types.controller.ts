@@ -92,7 +92,6 @@ export async function createCredentialType(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   // Validate input
@@ -135,7 +134,6 @@ export async function createCredentialType(req: any, res: any) {
       isPermanent
     })
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -157,7 +155,6 @@ export async function createCredentialType(req: any, res: any) {
   } catch (error: any) {
     console.error('Error creating credential type:', error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -196,7 +193,6 @@ export async function updateCredentialType(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   try {
@@ -225,7 +221,6 @@ export async function updateCredentialType(req: any, res: any) {
     
     await credentialType.save()
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -251,7 +246,6 @@ export async function updateCredentialType(req: any, res: any) {
   } catch (error: any) {
     console.error('Error updating credential type:', error)
 
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -286,7 +280,6 @@ export async function deleteCredentialType(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   try {
@@ -335,7 +328,6 @@ export async function deleteCredentialType(req: any, res: any) {
     
     await CredentialType.deleteOne({ id })
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -357,7 +349,6 @@ export async function deleteCredentialType(req: any, res: any) {
   } catch (error: any) {
     console.error('Error deleting credential type:', error)
 
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,

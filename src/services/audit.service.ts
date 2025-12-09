@@ -35,7 +35,6 @@ export async function logAudit(data: AuditLogData): Promise<void> {
     })
   } catch (error) {
     // Không throw error để không ảnh hưởng đến flow chính
-    // Chỉ log ra console
     console.error('Failed to create audit log:', error)
   }
 }

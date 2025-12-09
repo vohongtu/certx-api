@@ -112,7 +112,6 @@ import Issuer from "../models/issuer.model.js"
 
 // Helper function để tính toán status dựa trên expirationDate
 function calculateStatus(dbStatus: string, expirationDate?: string): string {
-  // Nếu là PENDING, APPROVED, REJECTED thì không tính EXPIRED
   if (dbStatus === CertStatus.PENDING || dbStatus === CertStatus.APPROVED || dbStatus === CertStatus.REJECTED) {
     return dbStatus
   }
@@ -243,7 +242,6 @@ export async function issue(req: any, res: any) {
         return res.status(400).json({ message: "Certificate này đã được cấp phát trên blockchain và vẫn còn hiệu lực" })
       }
       
-      // Nếu onChainStatus = 2 (REVOKED), có thể là re-issue với cùng watermark text
       // → vẫn ghi lên chain (blockchain sẽ revert nếu không cho phép)
     } catch (error: any) {
       // Không tìm thấy trên chain → OK, tiếp tục issue
@@ -281,7 +279,6 @@ export async function issue(req: any, res: any) {
 
     // 6) Ghi on-chain
     // Re-issue với watermark text khác sẽ tạo docHash mới → có thể ghi lên chain
-    // Nếu docHash trùng (watermark text giống) → blockchain sẽ revert (xử lý trong catch)
     await issueOnChain(docHash, metadataUri)
 
     // 7) Lưu DB với originalHash để tracking
@@ -305,7 +302,6 @@ export async function issue(req: any, res: any) {
     const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${docHash}`
     const qrcodeDataUrl = await toDataURL(verifyUrl)
 
-    // Ghi log thành công
     await logAudit({
       userId: issuerId,
       userEmail,
@@ -331,7 +327,6 @@ export async function issue(req: any, res: any) {
   } catch (error: any) {
     console.error("Issue error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: issuerId,
       userEmail,
@@ -380,7 +375,6 @@ export async function revoke(req: any, res: any) {
   let cert = await Cert.findOne({ docHash: hash, issuerId })
   let originalHash = cert?.originalHash || hash // Nếu không tìm thấy, giả sử hash là originalHash
 
-  // Nếu không tìm thấy, thử tìm theo originalHash
   if (!cert) {
     cert = await Cert.findOne({ originalHash: hash, issuerId }).sort({ createdAt: -1 })
     if (cert) {
@@ -451,8 +445,6 @@ export async function listMyCerts(req: any, res: any) {
       { userId: issuerId } // Chứng chỉ admin cấp phát cho user này
     ]
   }
-  // Lưu ý: EXPIRED được tính toán động, không lưu trong DB
-  // Nếu filter theo EXPIRED, cần filter sau khi tính toán status
   if (status && status !== 'ALL' && status !== 'EXPIRED') {
     if ([CertStatus.PENDING, CertStatus.APPROVED, CertStatus.REJECTED, CertStatus.VALID, CertStatus.REVOKED].includes(status as CertStatus)) {
     filter.status = status
@@ -481,7 +473,6 @@ export async function listMyCerts(req: any, res: any) {
     delete filter.$or
   }
 
-  // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
   if (status === 'EXPIRED') {
     // EXPIRED chỉ áp dụng cho cert đã approve (có expirationDate)
     // Bao gồm cả cert user tự upload và cert admin cấp phát cho user
@@ -576,21 +567,17 @@ export async function verify(req: any, res: any) {
     metadataURI = dbCert.metadataUri ?? ""
     source = "db"
     
-    // Nếu DB status là VALID, vẫn check blockchain để xác nhận
-    // Nếu DB status là REVOKED, không cần check blockchain (DB là source of truth)
     if (finalStatus === 'VALID') {
   try {
     const onChain = await getOnChain(hash)
         const onChainStatusValue = Number(onChain.status)
 
-        // Nếu blockchain trả về REVOKED nhưng DB là VALID → có thể là re-issue
         // Giữ nguyên VALID từ DB
         if (onChainStatusValue === 2) {
           // Blockchain đã REVOKED, nhưng DB vẫn VALID → có thể là re-issue
           // Giữ nguyên VALID từ DB
         }
         
-        // Nếu blockchain có metadataURI và DB không có, dùng từ blockchain
         if (!metadataURI && onChain.metadataURI) {
     metadataURI = onChain.metadataURI
           source = "chain"
@@ -673,7 +660,6 @@ export async function uploadFile(req: any, res: any) {
     const issuedDate = certxIssuedDate // Ngày cấp = ngày upload
 
     // LƯU Ý: User upload KHÔNG thêm watermark, chỉ lưu file gốc
-    // Chỉ khi admin approve thì mới thêm watermark
     const mimeType = await detectMime(file)
 
     // Lưu file gốc (chưa watermark) - docHash sẽ được tính lại khi approve
@@ -681,7 +667,6 @@ export async function uploadFile(req: any, res: any) {
     const tempDocHash = originalHash
 
     // LƯU Ý: User upload chỉ lưu metadata và file gốc vào MongoDB, KHÔNG upload lên IPFS
-    // Chỉ khi admin approve thì mới thêm watermark, upload lên IPFS và ghi lên blockchain
     // Lưu metadata và file gốc tạm thời vào MongoDB (chưa upload IPFS, chưa watermark)
     const cert = await Cert.create({
       docHash: tempDocHash, // Tạm thời dùng originalHash, sẽ được cập nhật khi approve
@@ -712,7 +697,6 @@ export async function uploadFile(req: any, res: any) {
       },
     })
 
-    // Ghi log thành công
     await logAudit({
       userId: issuerId,
       userEmail,
@@ -740,7 +724,6 @@ export async function uploadFile(req: any, res: any) {
   } catch (error: any) {
     console.error("Upload error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: issuerId,
       userEmail,
@@ -777,7 +760,6 @@ export async function approveCert(req: any, res: any) {
   try {
     const cert = await Cert.findById(id)
     if (!cert) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -794,7 +776,6 @@ export async function approveCert(req: any, res: any) {
     }
 
     if (cert.status !== CertStatus.PENDING) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -816,7 +797,6 @@ export async function approveCert(req: any, res: any) {
     // Tính toán expirationDate
     let finalExpirationDate: string | undefined = expirationDate
 
-    // Nếu có validityOptionId, tính từ validity option
     if (!finalExpirationDate && validityOptionId) {
       const CredentialValidityOption = (await import('../models/credential-validity-option.model.js')).default
       const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
@@ -833,7 +813,6 @@ export async function approveCert(req: any, res: any) {
       }
     }
 
-    // Nếu không có validityOptionId, tính từ expirationMonths/expirationYears
     if (!finalExpirationDate && (expirationMonths || expirationYears)) {
       const baseDate = new Date(certIssuedDate)
       if (expirationMonths) {
@@ -930,7 +909,6 @@ export async function approveCert(req: any, res: any) {
     const verifyUrl = `${config.PUBLIC_VERIFY_BASE}?hash=${cert.docHash}`
     const qrcodeDataUrl = await toDataURL(verifyUrl)
 
-    // Ghi log thành công
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -961,7 +939,6 @@ export async function approveCert(req: any, res: any) {
   } catch (error: any) {
     console.error("Approve error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1001,7 +978,6 @@ export async function rejectCert(req: any, res: any) {
   const { email: adminEmail, role: userRole } = await getUserInfoForAudit(adminId, adminRole)
 
   if (!rejectionReason || rejectionReason.trim() === '') {
-    // Ghi log thất bại
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1020,7 +996,6 @@ export async function rejectCert(req: any, res: any) {
   try {
     const cert = await Cert.findById(id)
     if (!cert) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -1037,7 +1012,6 @@ export async function rejectCert(req: any, res: any) {
     }
 
     if (cert.status !== CertStatus.PENDING) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -1060,7 +1034,6 @@ export async function rejectCert(req: any, res: any) {
     cert.rejectedAt = new Date()
     await cert.save()
 
-    // Ghi log thành công
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1084,7 +1057,6 @@ export async function rejectCert(req: any, res: any) {
   } catch (error: any) {
     console.error("Reject error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1110,7 +1082,6 @@ export async function listPendingCerts(req: any, res: any) {
   const q = (req.query.q ?? '').toString().trim()
   const status = (req.query.status ?? '').toString().toUpperCase()
 
-  // Nếu filter theo EXPIRED, cần tính toán status trước khi filter
   if (status === 'EXPIRED') {
     // EXPIRED chỉ áp dụng cho cert đã approve (có expirationDate)
     const baseFilter: any = { expirationDate: { $exists: true, $ne: null, $nin: [null, ''] } }
@@ -1156,8 +1127,6 @@ export async function listPendingCerts(req: any, res: any) {
   const filter: any = {}
   
   // Admin có thể xem PENDING, APPROVED, REJECTED, VALID, REVOKED
-  // Lưu ý: APPROVED là status tạm thời, sau khi approve thì status = VALID
-  // Nếu filter theo APPROVED, tìm các cert đã được approve (có approvedAt)
   if (status && status !== 'ALL') {
     if (status === 'APPROVED') {
       // Filter theo approvedAt thay vì status (vì sau khi approve, status = VALID)
@@ -1166,7 +1135,6 @@ export async function listPendingCerts(req: any, res: any) {
       filter.status = status
     }
   }
-  // Nếu không có status hoặc status là 'ALL', không set filter.status (xem tất cả)
 
   if (q) {
     const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
@@ -1219,7 +1187,6 @@ export async function updateExpirationDate(req: any, res: any) {
 
     let finalExpirationDate: string | undefined = expirationDate
 
-    // Nếu có validityOptionId, tính từ validity option
     if (!finalExpirationDate && validityOptionId) {
       const CredentialValidityOption = (await import('../models/credential-validity-option.model.js')).default
       const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
@@ -1236,7 +1203,6 @@ export async function updateExpirationDate(req: any, res: any) {
       }
     }
 
-    // Nếu không có validityOptionId, tính từ expirationMonths/expirationYears
     if (!finalExpirationDate && (expirationMonths || expirationYears)) {
       if (!finalIssuedDate) {
         return res.status(400).json({ message: 'Chứng chỉ không có ngày cấp' })
@@ -1337,7 +1303,6 @@ export async function reuploadCert(req: any, res: any) {
     let targetFile: Buffer
     let originalHash: string
 
-    // Nếu chọn dùng file cũ, lấy từ pendingMetadata trong MongoDB
     if (useOriginalFile === 'true' || useOriginalFile === true) {
       if (!originalCert.pendingMetadata || !originalCert.pendingMetadata.file) {
         return res.status(400).json({ message: "Không thể lấy file cũ. Vui lòng upload file mới." })
@@ -1366,7 +1331,6 @@ export async function reuploadCert(req: any, res: any) {
     const issuedDate = certxIssuedDate // Ngày cấp = ngày upload
 
     // LƯU Ý: User reup KHÔNG thêm watermark, chỉ lưu file gốc
-    // Chỉ khi admin approve thì mới thêm watermark
     const mimeType = await detectMime(targetFile)
     const issuerEmail = req.user?.email
     const issuerName = req.user?.name || issuerEmail || 'User'
@@ -1376,7 +1340,6 @@ export async function reuploadCert(req: any, res: any) {
     const tempDocHash = originalHash
 
     // LƯU Ý: User reup chỉ lưu metadata và file gốc vào MongoDB, KHÔNG upload lên IPFS
-    // Chỉ khi admin approve thì mới thêm watermark, upload lên IPFS và ghi lên blockchain
     // Lưu metadata và file gốc tạm thời vào MongoDB (chưa upload IPFS, chưa watermark)
     const cert = await Cert.create({
       docHash: tempDocHash, // Tạm thời dùng originalHash, sẽ được cập nhật khi approve
@@ -1414,7 +1377,6 @@ export async function reuploadCert(req: any, res: any) {
     originalCert.allowReupload = false
     await originalCert.save()
 
-    // Ghi log thành công
     await logAudit({
       userId,
       userEmail,
@@ -1443,7 +1405,6 @@ export async function reuploadCert(req: any, res: any) {
   } catch (error: any) {
     console.error("Reupload error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId,
       userEmail,
@@ -1483,7 +1444,6 @@ export async function previewCertFile(req: any, res: any) {
     let fileBuffer: Buffer | null = null
     let mimeType: string = 'application/pdf'
 
-    // Nếu có pendingMetadata (chưa approve), lấy file từ MongoDB
     if (cert.pendingMetadata && cert.pendingMetadata.file) {
       try {
         // Lấy file data từ Mongoose document
@@ -1504,7 +1464,6 @@ export async function previewCertFile(req: any, res: any) {
         throw new Error(`Không thể đọc file từ pendingMetadata: ${error.message}`)
       }
     } 
-    // Nếu đã approve, lấy từ IPFS
     else if (cert.metadataUri) {
       try {
         const response = await fetch(cert.metadataUri)
@@ -1556,7 +1515,6 @@ export async function revokeCertByAdmin(req: any, res: any) {
   try {
     const cert = await Cert.findById(id)
     if (!cert) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -1573,7 +1531,6 @@ export async function revokeCertByAdmin(req: any, res: any) {
     }
     
     if (cert.status !== CertStatus.VALID) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -1590,7 +1547,6 @@ export async function revokeCertByAdmin(req: any, res: any) {
     }
     
     if (!cert.docHash) {
-      // Ghi log thất bại
       await logAudit({
         userId: adminId,
         userEmail: adminEmail,
@@ -1611,7 +1567,6 @@ export async function revokeCertByAdmin(req: any, res: any) {
     cert.revokedAt = new Date()
     await cert.save()
 
-    // Ghi log thành công
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1634,7 +1589,6 @@ export async function revokeCertByAdmin(req: any, res: any) {
   } catch (error: any) {
     console.error("Revoke cert error:", error)
     
-    // Ghi log thất bại
     await logAudit({
       userId: adminId,
       userEmail: adminEmail,
@@ -1692,7 +1646,6 @@ export async function transferCertificate(req: any, res: any) {
       return res.status(404).json({ message: 'Không tìm thấy chứng chỉ' })
     }
 
-    // Chỉ cho phép chuyển chứng chỉ đã được cấp phát (VALID hoặc APPROVED)
     if (cert.status !== CertStatus.VALID && cert.status !== CertStatus.APPROVED) {
       await logAudit({
         userId: adminId,
@@ -1733,7 +1686,6 @@ export async function transferCertificate(req: any, res: any) {
 
     // Cập nhật userId và holderName (tên người nhận mới)
     cert.userId = newUserId
-    // Nếu có holderName từ request, dùng nó; nếu không, dùng tên từ user mới
     if (holderName && holderName.trim()) {
       cert.holderName = holderName.trim()
     } else {

@@ -10,13 +10,16 @@ export async function login(req: any, res: any) {
   const { email, password } = req.body
   
   try {
-  const user = await Issuer.findOne({ email, enabled: true })
+    const normalizedEmail = email?.toLowerCase().trim()
+    const user = await Issuer.findOne({ 
+      email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }, 
+      enabled: true 
+    })
 
     if (!user || !user.passwordHash) {
-      // Ghi log thất bại
       await logAudit({
         userId: 'unknown',
-        userEmail: email || 'unknown',
+        userEmail: normalizedEmail || 'unknown',
         userRole: 'USER',
         action: AuditAction.LOGIN,
         status: AuditStatus.FAILURE,
@@ -29,7 +32,6 @@ export async function login(req: any, res: any) {
 
   const ok = await bcrypt.compare(password, user.passwordHash)
     if (!ok) {
-      // Ghi log thất bại
       await logAudit({
         userId: user.id,
         userEmail: user.email,
@@ -51,7 +53,6 @@ export async function login(req: any, res: any) {
     }
   )
 
-    // Ghi log thành công
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -64,10 +65,10 @@ export async function login(req: any, res: any) {
 
   res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role || UserRole.USER } })
   } catch (error: any) {
-    // Ghi log thất bại
+    const normalizedEmail = email?.toLowerCase().trim() || 'unknown'
     await logAudit({
       userId: 'unknown',
-      userEmail: email || 'unknown',
+      userEmail: normalizedEmail,
       userRole: 'USER',
       action: AuditAction.LOGIN,
       status: AuditStatus.FAILURE,
@@ -84,7 +85,6 @@ export async function register(req: any, res: any) {
   
   try {
     if (!email || !password || !name) {
-      // Ghi log thất bại
       await logAudit({
         userId: 'unknown',
         userEmail: email || 'unknown',
@@ -98,9 +98,9 @@ export async function register(req: any, res: any) {
     return res.status(400).json({ message: "Thiếu email, password hoặc họ tên" })
     }
 
-  const existing = await Issuer.findOne({ email })
+  const normalizedEmail = email.toLowerCase().trim()
+  const existing = await Issuer.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } })
     if (existing) {
-      // Ghi log thất bại
       await logAudit({
         userId: 'unknown',
         userEmail: email,
@@ -115,14 +115,12 @@ export async function register(req: any, res: any) {
     }
 
   const hash = await bcrypt.hash(password, 10)
-  const user = await Issuer.create({ email, name, passwordHash: hash, address: address || undefined, role: UserRole.USER })
+  const user = await Issuer.create({ email: normalizedEmail, name, passwordHash: hash, address: address || undefined, role: UserRole.USER })
 
-  // Chỉ whitelist nếu có address
   if (address) {
   await whiteListIssuer(address, true)
   }
 
-    // Ghi log thành công
     await logAudit({
       userId: user.id,
       userEmail: user.email,
@@ -139,7 +137,6 @@ export async function register(req: any, res: any) {
 
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role })
   } catch (error: any) {
-    // Ghi log thất bại
     await logAudit({
       userId: 'unknown',
       userEmail: email || 'unknown',
