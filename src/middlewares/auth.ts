@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken'
-import { config } from '../utils/env'
-import { UserRole } from '../models/issuer.model'
+import { config } from '../utils/env.js'
+import { UserRole } from '../models/issuer.model.js'
 
 export function requireAuth(req: any, res: any, next: any) {
   const h = req.headers.authorization || ''

@@ -1,9 +1,9 @@
 import bcrypt from "bcryptjs"
-import Issuer, { UserRole } from "../models/issuer.model"
-import { whiteListIssuer } from "../services/blockchain.service"
-import { createVietnameseSearchRegex } from "../utils/vietnamese-utils"
-import { logAudit, getClientIp, getUserAgent } from "../services/audit.service"
-import { AuditAction, AuditStatus } from "../models/audit-log.model"
+import Issuer, { UserRole } from "../models/issuer.model.js"
+import { whiteListIssuer } from "../services/blockchain.service.js"
+import { createVietnameseSearchRegex } from "../utils/vietnamese-utils.js"
+import { logAudit, getClientIp, getUserAgent } from "../services/audit.service.js"
+import { AuditAction, AuditStatus } from "../models/audit-log.model.js"
 
 export async function listUsers(req: any, res: any) {
   const currentUserRole = req.user?.role

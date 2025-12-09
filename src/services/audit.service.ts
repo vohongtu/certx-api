@@ -1,5 +1,5 @@
-import AuditLog, { AuditAction, AuditStatus } from '../models/audit-log.model'
-import Issuer from '../models/issuer.model'
+import AuditLog, { AuditAction, AuditStatus } from '../models/audit-log.model.js'
+import Issuer from '../models/issuer.model.js'
 
 interface AuditLogData {
   userId: string

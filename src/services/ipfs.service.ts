@@ -1,4 +1,4 @@
-import { config } from "../utils/env"
+import { config } from "../utils/env.js"
 import { PinataSDK } from "pinata"
 
 const pinata = new PinataSDK({

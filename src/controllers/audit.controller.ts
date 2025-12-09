@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import AuditLog, { AuditAction, AuditStatus } from '../models/audit-log.model'
+import AuditLog, { AuditAction, AuditStatus } from '../models/audit-log.model.js'
 
 export async function listAuditLogs(req: any, res: Response) {
   try {

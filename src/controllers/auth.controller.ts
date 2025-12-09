@@ -1,10 +1,10 @@
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
-import Issuer, { UserRole } from "../models/issuer.model"
-import { config } from "../utils/env"
-import { whiteListIssuer } from "../services/blockchain.service"
-import { logAudit, getClientIp, getUserAgent } from "../services/audit.service"
-import { AuditAction, AuditStatus } from "../models/audit-log.model"
+import Issuer, { UserRole } from "../models/issuer.model.js"
+import { config } from "../utils/env.js"
+import { whiteListIssuer } from "../services/blockchain.service.js"
+import { logAudit, getClientIp, getUserAgent } from "../services/audit.service.js"
+import { AuditAction, AuditStatus } from "../models/audit-log.model.js"
 
 export async function login(req: any, res: any) {
   const { email, password } = req.body

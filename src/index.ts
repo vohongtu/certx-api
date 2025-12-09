@@ -1,6 +1,6 @@
-import { config } from "./utils/env"
-import { connectDB } from "./config/db"
-import { app } from "./app"
+import { config } from "./utils/env.js"
+import { connectDB } from "./config/db.js"
+import { app } from "./app.js"
 
 async function main() {
   await connectDB(config.MONGO_URI)

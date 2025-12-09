@@ -2,7 +2,7 @@ import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
 import sharp from 'sharp'
 import { fileTypeFromBuffer } from 'file-type'
 import fs from 'node:fs/promises'
-import { config } from '../utils/env'
+import { config } from '../utils/env.js'
 
 const defaultText = config.WATERMARK_TEXT || 'Issued by CertX'
 const defaultOpacity = config.WATERMARK_OPACITY ?? 0.2
