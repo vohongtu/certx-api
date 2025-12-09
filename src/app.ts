@@ -1,17 +1,18 @@
 import express from 'express'
 import cors from 'cors'
-import authRoutes from './routes/auth.routes'
-import certRoutes from './routes/certs.routes'
-import credentialTypesRoutes from './routes/credential-types.routes'
-import credentialValidityOptionsRoutes from './routes/credential-validity-options.routes'
-import auditRoutes from './routes/audit.routes'
+import { config } from "./utils/env.js"
+import authRoutes from './routes/auth.routes.js'
+import certRoutes from './routes/certs.routes.js'
+import credentialTypesRoutes from './routes/credential-types.routes.js'
+import credentialValidityOptionsRoutes from './routes/credential-validity-options.routes.js'
+import auditRoutes from './routes/audit.routes.js'
 
 export const app = express()
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin || ['http://localhost:5173', 'http://localhost:3000'].includes(origin)) {
+    if (!origin || [`${config.PUBLIC_CLIENT}`].includes(origin)) {
       callback(null, true)
     } else {
       callback(new Error('Not allowed by CORS'))

@@ -1,12 +1,12 @@
 import { Router } from 'express'
-import { requireAdmin } from '../middlewares/auth'
+import { requireAdmin } from '../middlewares/auth.js'
 import { 
   listValidityOptions, 
   getValidityOptionById,
   createValidityOption,
   updateValidityOption,
   deleteValidityOption
-} from '../controllers/credential-validity-options.controller'
+} from '../controllers/credential-validity-options.controller.js'
 
 const r = Router()
 

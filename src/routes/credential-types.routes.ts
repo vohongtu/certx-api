@@ -1,12 +1,12 @@
 import { Router } from 'express'
-import { requireAdmin } from '../middlewares/auth'
+import { requireAdmin } from '../middlewares/auth.js'
 import { 
   listCredentialTypes, 
   getCredentialTypeById,
   createCredentialType,
   updateCredentialType,
   deleteCredentialType
-} from '../controllers/credential-types.controller'
+} from '../controllers/credential-types.controller.js'
 
 const r = Router()
 

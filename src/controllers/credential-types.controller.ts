@@ -1,9 +1,9 @@
-import CredentialType from '../models/credential-type.model'
-import CredentialValidityOption from '../models/credential-validity-option.model'
-import { createVietnameseSearchRegex } from '../utils/vietnamese-utils'
-import { logAudit, getClientIp, getUserAgent } from '../services/audit.service'
-import { AuditAction, AuditStatus } from '../models/audit-log.model'
-import Issuer from '../models/issuer.model'
+import CredentialType from '../models/credential-type.model.js'
+import CredentialValidityOption from '../models/credential-validity-option.model.js'
+import { createVietnameseSearchRegex } from '../utils/vietnamese-utils.js'
+import { logAudit, getClientIp, getUserAgent } from '../services/audit.service.js'
+import { AuditAction, AuditStatus } from '../models/audit-log.model.js'
+import Issuer from '../models/issuer.model.js'
 
 // Lấy danh sách tất cả credential types
 export async function listCredentialTypes(req: any, res: any) {

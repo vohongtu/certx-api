@@ -1,6 +1,6 @@
 import { ethers } from "ethers"
-import { config } from "../utils/env"
-import smartContractDefinition from "../abi/CertificateRegistry.json"
+import { config } from "../utils/env.js"
+import smartContractDefinition from "../abi/CertificateRegistry.json" with { type: 'json' }
 
 const provider = new ethers.JsonRpcProvider(config.CHAIN_RPC_URL)
 const signer = new ethers.Wallet(config.PRIVATE_KEY, provider)

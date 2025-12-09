@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { requireSuperAdmin } from '../middlewares/auth'
-import { listAuditLogs, getAuditStats } from '../controllers/audit.controller'
+import { requireSuperAdmin } from '../middlewares/auth.js'
+import { listAuditLogs, getAuditStats } from '../controllers/audit.controller.js'
 
 const r = Router()
 

@@ -1,8 +1,8 @@
 import { Router } from 'express'
-import { requireAuth, requireAdmin, requireSuperAdmin } from '../middlewares/auth'
-import { upload } from '../middlewares/upload'
-import { issue, revoke, verify, qrcode, listMyCerts, uploadFile, approveCert, rejectCert, listPendingCerts, updateExpirationDate, reuploadCert, revokeCertByAdmin, previewCertFile, transferCertificate } from '../controllers/certs.controller'
-import { listUsers, createUser, updateUser, deleteUser } from '../controllers/users.controller'
+import { requireAuth, requireAdmin, requireSuperAdmin } from '../middlewares/auth.js'
+import { upload } from '../middlewares/upload.js'
+import { issue, revoke, verify, qrcode, listMyCerts, uploadFile, approveCert, rejectCert, listPendingCerts, updateExpirationDate, reuploadCert, revokeCertByAdmin, previewCertFile, transferCertificate } from '../controllers/certs.controller.js'
+import { listUsers, createUser, updateUser, deleteUser } from '../controllers/users.controller.js'
 import multer from 'multer'
 
 const r = Router()

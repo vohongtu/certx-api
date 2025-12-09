@@ -1,5 +1,5 @@
-import CredentialValidityOption from '../models/credential-validity-option.model'
-import CredentialType from '../models/credential-type.model'
+import CredentialValidityOption from '../models/credential-validity-option.model.js'
+import CredentialType from '../models/credential-type.model.js'
 
 // Lấy danh sách validity options theo credentialTypeId
 export async function listValidityOptions(req: any, res: any) {

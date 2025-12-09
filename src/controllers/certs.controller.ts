@@ -1,10 +1,10 @@
-import { sha256Hex } from "../services/hash.service"
-import { issueOnChain, revokeOnChain, getOnChain } from "../services/blockchain.service"
-import { toDataURL } from "../services/qrcode.service"
-import Cert, { CertStatus } from "../models/cert.model"
-import { config } from "../utils/env"
-import { uploadJSON } from "../services/ipfs.service"
-import { addWatermark, detectMime } from "../services/watermark.service"
+import { sha256Hex } from "../services/hash.service.js"
+import { issueOnChain, revokeOnChain, getOnChain } from "../services/blockchain.service.js"
+import { toDataURL } from "../services/qrcode.service.js"
+import Cert, { CertStatus } from "../models/cert.model.js"
+import { config } from "../utils/env.js"
+import { uploadJSON } from "../services/ipfs.service.js"
+import { addWatermark, detectMime } from "../services/watermark.service.js"
 
 // Helper function để kiểm tra file có phải PDF hợp lệ không
 function isPDF(buf: Buffer): boolean {
@@ -106,9 +106,9 @@ async function detectAndValidateMimeType(
   
   return finalMimeType
 }
-import { logAudit, getClientIp, getUserAgent, getUserInfoForAudit } from "../services/audit.service"
-import { AuditAction, AuditStatus } from "../models/audit-log.model"
-import Issuer from "../models/issuer.model"
+import { logAudit, getClientIp, getUserAgent, getUserInfoForAudit } from "../services/audit.service.js"
+import { AuditAction, AuditStatus } from "../models/audit-log.model.js"
+import Issuer from "../models/issuer.model.js"
 
 // Helper function để tính toán status dựa trên expirationDate
 function calculateStatus(dbStatus: string, expirationDate?: string): string {
@@ -818,7 +818,7 @@ export async function approveCert(req: any, res: any) {
 
     // Nếu có validityOptionId, tính từ validity option
     if (!finalExpirationDate && validityOptionId) {
-      const CredentialValidityOption = (await import('../models/credential-validity-option.model')).default
+      const CredentialValidityOption = (await import('../models/credential-validity-option.model.js')).default
       const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
       
       if (validityOption) {
@@ -1221,7 +1221,7 @@ export async function updateExpirationDate(req: any, res: any) {
 
     // Nếu có validityOptionId, tính từ validity option
     if (!finalExpirationDate && validityOptionId) {
-      const CredentialValidityOption = (await import('../models/credential-validity-option.model')).default
+      const CredentialValidityOption = (await import('../models/credential-validity-option.model.js')).default
       const validityOption = await CredentialValidityOption.findOne({ id: validityOptionId })
       
       if (validityOption && finalIssuedDate) {
