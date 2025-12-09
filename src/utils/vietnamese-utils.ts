@@ -38,16 +38,13 @@ export function createVietnameseSearchRegex(searchText: string): RegExp {
   }
   
   // Tạo pattern: tìm cả có dấu và không dấu
-  // Ví dụ: "bang" sẽ match "bằng", "bang", "Bằng", "Bang"
   const pattern = normalizedSearch
     .split('')
     .map(char => {
-      // Nếu là ký tự có thể có dấu, trả về pattern
       if (charMap[char]) {
         return charMap[char]
       }
       
-      // Nếu không, escape ký tự đặc biệt và giữ nguyên (case-insensitive)
       const escaped = char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       return `[${escaped}${escaped.toUpperCase()}]`
     })

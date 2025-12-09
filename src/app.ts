@@ -11,17 +11,12 @@ export const app = express()
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
       callback(null, true)
       return
     }
     
-    // Danh sách origin được phép
     const allowedOrigins = [config.PUBLIC_CLIENT].filter(Boolean)
-    
-    // Chỉ cho phép localhost trong development (NODE_ENV !== 'production')
-    // Điều này đảm bảo production không bị lộ localhost
     const isProduction = process.env.NODE_ENV === 'production'
     if (!isProduction) {
       allowedOrigins.push(
@@ -40,8 +35,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Content-Length', 'Content-Type'],
-  maxAge: 86400, // 24 hours
-  // Quan trọng: Cho phép tất cả Content-Type (bao gồm multipart/form-data)
+  maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204,
 }))
@@ -51,12 +45,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 app.get('/health', (_, res) => res.json({ ok: true }))
 app.use('/auth', authRoutes)
-app.use('/', certRoutes) // /certs/*, /verify, /qrcode
-app.use('/', credentialTypesRoutes) // /credential-types/*
-app.use('/', credentialValidityOptionsRoutes) // /credential-validity-options/*
-app.use('/audit', auditRoutes) // /audit/* (chỉ SUPER_ADMIN)
-
-// error fallback
+app.use('/', certRoutes)
+app.use('/', credentialTypesRoutes)
+app.use('/', credentialValidityOptionsRoutes)
+app.use('/audit', auditRoutes)
 app.use((err: any, _req: any, res: any, _next: any) => {
   const code = err.status || 500
   res.status(code).json({ message: err.message || 'Server error' })

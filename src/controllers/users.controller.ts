@@ -89,12 +89,10 @@ export async function createUser(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   try {
   if (!email || !password || !name) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -110,7 +108,6 @@ export async function createUser(req: any, res: any) {
 
   // Admin chỉ có thể tạo USER
   if (currentUserRole === UserRole.ADMIN && requestedRole && requestedRole !== UserRole.USER) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -136,9 +133,7 @@ export async function createUser(req: any, res: any) {
     }
   }
 
-  // Nếu tạo ADMIN hoặc SUPER_ADMIN thì bắt buộc phải có address
   if ((role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN) && !address) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -152,12 +147,10 @@ export async function createUser(req: any, res: any) {
     return res.status(400).json({ message: `Tạo tài khoản ${role === UserRole.SUPER_ADMIN ? 'super admin' : 'admin'} cần có địa chỉ ETH` })
   }
 
-  // Nếu tạo USER thì không cần address
   const finalAddress = role === UserRole.USER ? '' : (address || '')
-
-  const existing = await Issuer.findOne({ email })
+  const normalizedEmail = email.toLowerCase().trim()
+  const existing = await Issuer.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } })
     if (existing) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -173,7 +166,7 @@ export async function createUser(req: any, res: any) {
 
   const hash = await bcrypt.hash(password, 10)
   const user = await Issuer.create({ 
-    email, 
+    email: normalizedEmail, 
     name, 
     passwordHash: hash, 
     address: finalAddress, 
@@ -185,7 +178,6 @@ export async function createUser(req: any, res: any) {
     await whiteListIssuer(finalAddress, true)
   }
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -213,7 +205,6 @@ export async function createUser(req: any, res: any) {
     enabled: user.enabled
   })
   } catch (error: any) {
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -246,13 +237,11 @@ export async function updateUser(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   try {
   const user = await Issuer.findById(id)
     if (!user) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -271,7 +260,6 @@ export async function updateUser(req: any, res: any) {
   // Admin không thể sửa admin hoặc super admin
   if (currentUserRole === UserRole.ADMIN) {
     if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -288,7 +276,6 @@ export async function updateUser(req: any, res: any) {
     }
     // Admin không thể thay đổi role
     if (requestedRole && requestedRole !== user.role) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -308,7 +295,6 @@ export async function updateUser(req: any, res: any) {
   // Super admin có thể sửa admin (nhưng không thể sửa super admin khác)
   if (currentUserRole === UserRole.SUPER_ADMIN) {
     if (user.role === UserRole.SUPER_ADMIN && user.id !== currentUserId) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -326,9 +312,7 @@ export async function updateUser(req: any, res: any) {
     // Super admin có thể thay đổi role (bao gồm cả SUPER_ADMIN)
     if (requestedRole) {
       user.role = requestedRole as UserRole
-      // Nếu thay đổi thành ADMIN hoặc SUPER_ADMIN mà không có address thì yêu cầu
       if ((requestedRole === UserRole.ADMIN || requestedRole === UserRole.SUPER_ADMIN) && !address) {
-          // Ghi log thất bại
           await logAudit({
             userId: currentUserId,
             userEmail: adminEmail,
@@ -351,10 +335,11 @@ export async function updateUser(req: any, res: any) {
     const oldEnabled = user.enabled
 
   if (name) user.name = name
-  if (email && email !== user.email) {
-    const existing = await Issuer.findOne({ email })
+  if (email) {
+    const normalizedEmail = email.toLowerCase().trim()
+    if (normalizedEmail !== user.email.toLowerCase()) {
+      const existing = await Issuer.findOne({ email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') } })
       if (existing) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -369,7 +354,8 @@ export async function updateUser(req: any, res: any) {
         })
         return res.status(400).json({ message: "Email đã tồn tại" })
       }
-    user.email = email
+      user.email = normalizedEmail
+    }
   }
   if (address !== undefined) user.address = address
   if (enabled !== undefined) user.enabled = enabled
@@ -379,7 +365,6 @@ export async function updateUser(req: any, res: any) {
 
   await user.save()
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -414,7 +399,6 @@ export async function updateUser(req: any, res: any) {
     enabled: user.enabled
   })
   } catch (error: any) {
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -448,13 +432,11 @@ export async function deleteUser(req: any, res: any) {
       adminRole = issuer.role as 'USER' | 'ADMIN' | 'SUPER_ADMIN'
     }
   } catch (err) {
-    // Nếu không lấy được, dùng giá trị mặc định
   }
 
   try {
   const user = await Issuer.findById(id)
     if (!user) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -472,7 +454,6 @@ export async function deleteUser(req: any, res: any) {
 
   // Không thể xóa chính mình
   if (user.id === currentUserId) {
-      // Ghi log thất bại
       await logAudit({
         userId: currentUserId,
         userEmail: adminEmail,
@@ -491,7 +472,6 @@ export async function deleteUser(req: any, res: any) {
   // Admin không thể xóa admin hoặc super admin
   if (currentUserRole === UserRole.ADMIN) {
     if (user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -511,7 +491,6 @@ export async function deleteUser(req: any, res: any) {
   // Super admin chỉ có thể xóa admin, không thể xóa super admin khác
   if (currentUserRole === UserRole.SUPER_ADMIN) {
     if (user.role === UserRole.SUPER_ADMIN) {
-        // Ghi log thất bại
         await logAudit({
           userId: currentUserId,
           userEmail: adminEmail,
@@ -534,7 +513,6 @@ export async function deleteUser(req: any, res: any) {
 
   await Issuer.findByIdAndDelete(id)
 
-    // Ghi log thành công
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
@@ -554,7 +532,6 @@ export async function deleteUser(req: any, res: any) {
 
   res.json({ ok: true, message: "Đã xóa user" })
   } catch (error: any) {
-    // Ghi log thất bại
     await logAudit({
       userId: currentUserId,
       userEmail: adminEmail,
