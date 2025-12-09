@@ -12,7 +12,25 @@ export const app = express()
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin || [`${config.PUBLIC_CLIENT}`].includes(origin)) {
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+    
+    // Danh sách origin được phép
+    const allowedOrigins = [config.PUBLIC_CLIENT].filter(Boolean)
+    
+    // Chỉ cho phép localhost trong development (NODE_ENV !== 'production')
+    // Điều này đảm bảo production không bị lộ localhost
+    const isProduction = process.env.NODE_ENV === 'production'
+    if (!isProduction) {
+      allowedOrigins.push(
+        'http://localhost:5173',
+        'http://127.0.0.1:5173'
+      )
+    }
+    
+    if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
       callback(new Error('Not allowed by CORS'))
